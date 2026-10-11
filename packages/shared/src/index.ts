@@ -25,3 +25,20 @@ export interface RideRecord extends RideInfo {
   /** [lng, lat][] WGS84 */
   track: [number, number][];
 }
+
+/** 猫径：被反复骑行的相似线路（聚类结果） */
+export interface RouteCluster {
+  id: string;
+  rideIds: number[];
+  count: number;
+  /** 均速最高的一次 = 最佳成绩 */
+  bestRideId: number;
+  bestAvgSpeedKmh: number;
+  totalKm: number;
+}
+
+/** clusters.json / GET /api/clusters 的结构 */
+export interface ClustersIndex {
+  generatedAt: string;
+  clusters: RouteCluster[];
+}

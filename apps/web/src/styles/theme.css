@@ -179,3 +179,26 @@ body {
   background: var(--bg-0);
   transition: opacity 0.5s ease;
 }
+
+/* 猫径（相似线路聚类） */
+.clusters { border-bottom: 1px solid var(--line); }
+.cluster-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 2px 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+.cluster-item:hover { background: var(--bg-2); transform: translateX(2px); }
+.cluster-item.active {
+  background: rgba(255, 179, 71, 0.12);
+  outline: 1px solid rgba(255, 179, 71, 0.35);
+}
+.cluster-item .paw { font-size: 16px; }
+.cluster-item .name { font-size: 13px; font-weight: 600; }
+.cluster-item .meta { font-size: 11px; color: var(--ink-2); margin-top: 2px; }
+.cluster-item .meta b { color: var(--cat-amber); }
+.cluster-item .arrow { margin-left: auto; color: var(--ink-3); }

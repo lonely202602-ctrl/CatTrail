@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { openDb, listRides } from './store/db.js';
 import { writeIndexSnapshot } from './sync/sync.js';
+import { buildClusters } from './clusters/cluster.js';
 import type { RidesIndex, RideRecord } from '@lonelycat/shared';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -65,6 +66,9 @@ app.get('/api/tracks', async () => {
     })),
   };
 });
+
+/** 猫径：相似线路聚类（实时计算，与 data/clusters.json 同构） */
+app.get('/api/clusters', async () => buildClusters(ridesOrSeed()));
 
 /** 静态快照直读（演示模式与 /data 契约） */
 app.get('/data/:file', async (req, reply) => {

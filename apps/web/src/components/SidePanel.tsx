@@ -1,14 +1,19 @@
-import type { RideInfo } from '@lonelycat/shared';
+import type { RideInfo, RouteCluster } from '@lonelycat/shared';
 
 interface Props {
   rides: RideInfo[];
+  clusters: RouteCluster[];
   totalKm: number;
   totalAscentM: number;
   selectedId: number | null;
+  selectedClusterId: string | null;
   onSelect: (id: number) => void;
+  onSelectCluster: (id: string) => void;
 }
 
-export default function SidePanel({ rides, totalKm, totalAscentM, selectedId, onSelect }: Props) {
+export default function SidePanel({
+  rides, clusters, totalKm, totalAscentM, selectedId, selectedClusterId, onSelect, onSelectCluster,
+}: Props) {
   return (
     <aside className="panel">
       <div className="panel__brand">
@@ -29,10 +34,32 @@ export default function SidePanel({ rides, totalKm, totalAscentM, selectedId, on
           <span>骑行次数</span>
         </div>
         <div className="stat">
-          <b>{totalAscentM.toFixed(0)}</b>
-          <span>总爬升 M</span>
+          <b>{clusters.length}</b>
+          <span>猫 径</span>
         </div>
       </div>
+
+      {clusters.length > 0 && (
+        <div className="rides clusters">
+          <div className="rides__title">猫 径 · 反 复 巡 游 的 路</div>
+          {clusters.map((c, i) => (
+            <div
+              key={c.id}
+              className={`cluster-item${selectedClusterId === c.id ? ' active' : ''}`}
+              onClick={() => onSelectCluster(c.id)}
+            >
+              <span className="paw">🐾</span>
+              <div className="info">
+                <div className="name">猫径 #{i + 1}</div>
+                <div className="meta">
+                  骑过 <b>{c.count}</b> 次 · 最佳 <b>{c.bestAvgSpeedKmh.toFixed(1)} km/h</b>
+                </div>
+              </div>
+              <span className="arrow">→</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="rides">
         <div className="rides__title">足 迹 巡 回</div>

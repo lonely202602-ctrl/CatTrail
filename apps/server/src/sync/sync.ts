@@ -5,6 +5,7 @@ import type { RidesIndex, RideInfo, RideRecord } from '@lonelycat/shared';
 import { getEdgeKeys, login, listAllActivities, getActivityDetail, downloadFit, sleep } from '../igpsport/client.js';
 import { parseFit } from '../igpsport/fit.js';
 import { openDb, upsertRide, getStoredRideIds, listRides } from '../store/db.js';
+import { buildClusters } from '../clusters/cluster.js';
 
 export interface SyncOptions {
   username: string;
@@ -74,6 +75,7 @@ export async function runSync(opts: SyncOptions): Promise<SyncSummary> {
   // 重写聚合快照
   const rides = listRides();
   writeIndexSnapshot(dataDir, rides);
+  writeClustersSnapshot(dataDir, rides);
   const totalKm = Math.round(rides.reduce((s, r) => s + r.distanceKm, 0) * 100) / 100;
   return { fetched: rows.length, added, skipped, totalKm };
 }
@@ -133,4 +135,10 @@ export function writeIndexSnapshot(dataDir: string, rides: RideRecord[]) {
     })),
   };
   fs.writeFileSync(path.join(dataDir, 'tracks.json'), JSON.stringify(fc));
+}
+
+/** 猫径聚类快照（data/clusters.json） */
+export function writeClustersSnapshot(dataDir: string, rides: RideRecord[]) {
+  ensureDir(dataDir);
+  fs.writeFileSync(path.join(dataDir, 'clusters.json'), JSON.stringify(buildClusters(rides), null, 2));
 }
