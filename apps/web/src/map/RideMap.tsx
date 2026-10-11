@@ -377,6 +377,7 @@ export default function RideMap({
       }
       const f = tracks.features.find((x) => x.properties.rideId === replayRideId);
       if (!f || f.geometry.coordinates.length < 2) return;
+      const C = trailPalette(handlers.current.theme);
       const coords = f.geometry.coordinates;
 
       if (!markerRef.current) {
@@ -415,13 +416,18 @@ export default function RideMap({
         }
       }
 
+      ensureReplayLayers(map, handlers.current.theme);
+      const main = ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.9, C.track, 1, C.hi];
+      const glow = ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.85, C.track, 1, C.hi];
+      map.setPaintProperty('replay-line', 'line-gradient', main);
+      map.setPaintProperty('replay-glow', 'line-gradient', glow);
       replayStore.start(replayRideId);
       const DUR = 20000;
       const start = performance.now();
       const tick = (now: number) => {
         // 换肤/销毁期间图层可能暂时不存在，跳过这一帧即可
         if (!markerRef.current) return;
-        const replaySrc = ensureReplayLayers(map); // 图层丢失（换肤/样式重建）时自愈
+        const replaySrc = ensureReplayLayers(map, handlers.current.theme); // 图层丢失时自愈
         if (!replaySrc) return;
         try {
           const p = Math.min(1, (now - start) / DUR);
@@ -478,7 +484,10 @@ function waitStyleReady(map: maplibregl.Map, fn: () => void) {
 }
 
 /** 回放图层自愈：换肤/样式重建导致图层丢失时自动重建（幂等） */
-function ensureReplayLayers(map: maplibregl.Map): maplibregl.GeoJSONSource | null {
+function ensureReplayLayers(map: maplibregl.Map, theme: TrailTheme): maplibregl.GeoJSONSource | null {
+  const C = trailPalette(theme);
+  const main = ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.9, C.track, 1, C.hi];
+  const glow = ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.85, C.track, 1, C.hi];
   if (!map.getSource('replay-line')) {
     map.addSource('replay-line', {
       type: 'geojson',
@@ -495,8 +504,8 @@ function ensureReplayLayers(map: maplibregl.Map): maplibregl.GeoJSONSource | nul
       paint: {
         'line-width': 13,
         'line-blur': 5,
-        'line-opacity': 0.55,
-        'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, 'rgba(0,0,0,0)', 1, 'rgba(0,0,0,0)'],
+        'line-opacity': 0.5,
+        'line-gradient': glow,
       },
     });
   }
@@ -508,7 +517,7 @@ function ensureReplayLayers(map: maplibregl.Map): maplibregl.GeoJSONSource | nul
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 14, 4.5],
-        'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, 'rgba(0,0,0,0)', 1, 'rgba(0,0,0,0)'],
+        'line-gradient': main,
       },
     });
   }
