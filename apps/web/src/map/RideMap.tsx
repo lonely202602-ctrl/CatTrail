@@ -155,7 +155,7 @@ export default function RideMap({
       if (stopped) return;
       if (replayRideId == null) {
         // 播完自然结束：保留完整亮线；中途手动停止：隐藏
-        if (replayProgressRef.current >= 0.999) {
+        if (replayProgressRef.current >= 0.99) {
           const f = tracks.features.find((x) => x.properties.rideId === replayRideId);
           if (f) {
             const src = ensureReplayLayers(map, handlers.current.theme);
