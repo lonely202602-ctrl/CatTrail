@@ -427,9 +427,23 @@ export default function RideMap({
           const p = Math.min(1, (now - start) / DUR);
           const idx = Math.min(coords.length - 1, Math.floor(p * (coords.length - 1)));
           markerRef.current.setLngLat(coords[idx]);
-          // 已骑高亮：更新 line-gradient（仅重绘该图层，无数据重铺）
-          const g = ['interpolate', ['linear'], ['line-progress'], 0, '#ffe9d6', Math.max(0.001, p), '#ffe9d6', Math.min(1, p + 0.002), 'rgba(255,233,214,0)', 1, 'rgba(255,233,214,0)'];
-          map.setPaintProperty('replay-line', 'line-gradient', g);
+          // 渐进绘制：走到哪，路线就画到哪（① 写入已骑坐标 ② 渐变上主题色）
+          replaySrc.setData({
+            type: 'FeatureCollection',
+            features: [
+              {
+                type: 'Feature',
+                properties: {},
+                geometry: { type: 'LineString', coordinates: coords.slice(0, idx + 1) },
+              },
+            ],
+          });
+          const C = trailPalette(handlers.current.theme);
+          const edge = Math.max(0.001, p);
+          const fade = Math.min(1, p + 0.002);
+          const stops = ['interpolate', ['linear'], ['line-progress'], 0, C.track, edge, C.track, fade, 'rgba(0,0,0,0)', 1, 'rgba(0,0,0,0)'];
+          map.setPaintProperty('replay-line', 'line-gradient', stops);
+          map.setPaintProperty('replay-glow', 'line-gradient', stops);
           replayStore.update(replayRideId, p);
           if (p < 1) {
             raf = requestAnimationFrame(tick);
