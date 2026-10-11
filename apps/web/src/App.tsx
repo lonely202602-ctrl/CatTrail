@@ -20,7 +20,7 @@ export default function App() {
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
   const [focusRideIds, setFocusRideIds] = useState<number[] | null>(null);
   /** 骑行回放：进度由这里统一驱动，地图光点与图表指针共享同一进度 */
-  const [replay, setReplay] = useState<{ rideId: number; progress: number } | null>(null);
+  const [replayRide, setReplayRide] = useState<number | null>(null);
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [seriesCache, setSeriesCache] = useState<Record<number, RideSeriesPoint[]>>({});
@@ -73,28 +73,9 @@ export default function App() {
 
   const startReplay = (rideId: number) => {
     // 再次点击 = 停止；回放期间抽屉保持打开，图表指针与地图光点同步
-    setReplay((r) => (r && r.rideId === rideId ? null : { rideId, progress: 0 }));
+    // 进度由 RideMap 内部 RAF 驱动并写入 replayStore（避免高频 React 重渲染）
+    setReplayRide((r) => (r === rideId ? null : rideId));
   };
-
-  useEffect(() => {
-    if (!replay) return;
-    const rideId = replay.rideId;
-    const DUR = 20000;
-    const start = performance.now();
-    let stopped = false;
-    const tick = () => {
-      if (stopped) return;
-      const p = Math.min(1, (performance.now() - start) / DUR);
-      setReplay((r) => (r && r.rideId === rideId ? { rideId, progress: p } : r));
-      if (p < 1) setTimeout(tick, 50);
-      else setTimeout(() => setReplay((r) => (r && r.rideId === rideId ? null : r)), 1200);
-    };
-    const t = setTimeout(tick, 60);
-    return () => {
-      stopped = true;
-      clearTimeout(t);
-    };
-  }, [replay?.rideId]);
 
   const clearFocus = () => {
     setFocusRideIds(null);
@@ -116,7 +97,8 @@ export default function App() {
         selectedId={selectedId}
         selectedClusterId={selectedClusterId}
         focusRideIds={focusRideIds}
-        replay={replay}
+        replayRideId={replayRide}
+        onReplayEnd={() => setReplayRide(null)}
         onSelect={(id) => {
           setSelectedId(id);
           setSelectedClusterId(null);
@@ -164,8 +146,7 @@ export default function App() {
           series={seriesCache[detailId] ?? []}
           theme={theme}
           track={detailTrack ?? []}
-          replay={replay}
-          onToggleReplay={() => detailId != null && startReplay(detailId)}
+            onToggleReplay={() => detailId != null && startReplay(detailId)}
           onClose={() => setDetailId(null)}
         />
       )}

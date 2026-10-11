@@ -1,24 +1,16 @@
 /** 轨迹分析抽屉：双击线路打开 —— 数据网格 + 速度/海拔/心率曲线（手写 SVG，零图表库）+ 路书导出/回放 */
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState, useSyncExternalStore } from 'react';
 import type { RideInfo, RideSeriesPoint } from '@lonelycat/shared';
-import { exportGpx, exportShareCard } from '../lib/export';
+import { exportGpx, exportShareCard, fmtDuration } from '../lib/export';
+import { replayStore } from '../lib/replayStore';
 
 interface Props {
   ride: RideInfo;
   series: RideSeriesPoint[];
   theme: 'night' | 'day';
   track: [number, number][];
-  /** 回放状态（非 null 且 rideId 匹配时，图表指针与地图光点同步） */
-  replay: { rideId: number; progress: number } | null;
   onToggleReplay: () => void;
   onClose: () => void;
-}
-
-function fmtDuration(sec: number): string {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = Math.floor(sec % 60);
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 const CHART_COLORS = {
@@ -26,9 +18,11 @@ const CHART_COLORS = {
   day: { speed: ['#ff9a63', '#e8551f'], alt: ['#5fc4ae', '#2f9e8f'], hr: ['#f08a8a', '#d6455f'], axis: '#98a0af' },
 } as const;
 
-export default function ActivityDrawer({ ride, series, theme, track, replay, onToggleReplay, onClose }: Props) {
+export default function ActivityDrawer({ ride, series, theme, track, onToggleReplay, onClose }: Props) {
   const colors = CHART_COLORS[theme];
-  const replaying = replay?.rideId === ride.rideId;
+  // 订阅回放store：仅在开始/停止/节流通知时重渲染，图表本体 memo 隔离
+  const replayState = useSyncExternalStore(replayStore.subscribe, replayStore.get);
+  const replaying = replayState.rideId === ride.rideId;
   const tMax = series.length > 0 ? series[series.length - 1].t : 0;
 
   const speedData = useMemo(() => series.filter((p) => p.s != null).map((p) => ({ x: p.t, y: p.s! })), [series]);
@@ -65,15 +59,15 @@ export default function ActivityDrawer({ ride, series, theme, track, replay, onT
       <div className="drawer__charts">
         {speedData.length > 1 && (
           <AreaChart data={speedData} tMax={tMax} colors={colors.speed} axis={colors.axis}
-            title="速度" unit="km/h" height={120} pin={replaying ? replay!.progress : null} />
+            title="速度" unit="km/h" height={120} replayActive={replaying} />
         )}
         {altData.length > 1 && (
           <AreaChart data={altData} tMax={tMax} colors={colors.alt} axis={colors.axis}
-            title="海拔" unit="m" height={100} pin={replaying ? replay!.progress : null} />
+            title="海拔" unit="m" height={100} replayActive={replaying} />
         )}
         {hrData.length > 1 && (
           <AreaChart data={hrData} tMax={tMax} colors={colors.hr} axis={colors.axis}
-            title="心率" unit="bpm" height={100} pin={replaying ? replay!.progress : null} />
+            title="心率" unit="bpm" height={100} replayActive={replaying} />
         )}
       </div>
 
@@ -82,9 +76,9 @@ export default function ActivityDrawer({ ride, series, theme, track, replay, onT
   );
 }
 
-/** 手写 SVG 面积图：渐变填充 + 悬停十字线与数值气泡 + 回放指针 */
-function AreaChart({
-  data, tMax, colors, axis, title, unit, height, pin,
+/** 手写 SVG 面积图：渐变填充 + 悬停十字线 + 回放指针（指针独立订阅 store，不拖累图表渲染） */
+const AreaChart = memo(function AreaChart({
+  data, tMax, colors, axis, title, unit, height, replayActive,
 }: {
   data: { x: number; y: number }[];
   tMax: number;
@@ -93,27 +87,30 @@ function AreaChart({
   title: string;
   unit: string;
   height: number;
-  pin?: number | null;
+  replayActive: boolean;
 }) {
   const [hover, setHover] = useState<{ i: number; px: number } | null>(null);
   const W = 400;
   const H = height;
   const PAD_B = 18;
 
-  const ys = data.map((d) => d.y);
-  const yMin = Math.min(...ys);
-  const yMax = Math.max(...ys);
-  const yPad = (yMax - yMin) * 0.12 || 1;
-  const lo = yMin - yPad;
-  const hi = yMax + yPad;
+  const { linePath, areaPath, ys, lo, hi } = useMemo(() => {
+    const ys = data.map((d) => d.y);
+    const yMin = Math.min(...ys);
+    const yMax = Math.max(...ys);
+    const yPad = (yMax - yMin) * 0.12 || 1;
+    const lo = yMin - yPad;
+    const hi = yMax + yPad;
+    const X = (t: number) => (tMax > 0 ? (t / tMax) * W : 0);
+    const Y = (v: number) => H - PAD_B - ((v - lo) / (hi - lo)) * (H - PAD_B - 8);
+    const linePath = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${X(d.x).toFixed(1)},${Y(d.y).toFixed(1)}`).join('');
+    const areaPath = `${linePath}L${W},${H - PAD_B}L0,${H - PAD_B}Z`;
+    return { linePath, areaPath, ys, lo, hi };
+  }, [data, tMax, height]);
 
   const X = (t: number) => (tMax > 0 ? (t / tMax) * W : 0);
   const Y = (v: number) => H - PAD_B - ((v - lo) / (hi - lo)) * (H - PAD_B - 8);
-
-  const linePath = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${X(d.x).toFixed(1)},${Y(d.y).toFixed(1)}`).join('');
-  const areaPath = `${linePath}L${W},${H - PAD_B}L0,${H - PAD_B}Z`;
   const gid = `g-${title}-${colors[1].replace(/[^a-z0-9]/gi, '')}`;
-
   const avg = ys.reduce((s, v) => s + v, 0) / (ys.length || 1);
 
   const onMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -130,14 +127,6 @@ function AreaChart({
   };
 
   const hp = hover ? data[hover.i] : null;
-
-  // 回放指针：按时间轴精确定位（与地图光点共用同一 progress）
-  const pinData = (() => {
-    if (pin == null || data.length === 0) return null;
-    const t = pin * tMax;
-    let idx = Math.max(0, Math.min(data.length - 1, Math.round((t / (tMax || 1)) * (data.length - 1))));
-    return { idx, d: data[idx], xRatio: X(data[idx].x) / W, yRatio: Y(data[idx].y) / H };
-  })();
 
   return (
     <div className="chart">
@@ -160,26 +149,20 @@ function AreaChart({
             <line x1={X(data[hover.i].x)} y1="0" x2={X(data[hover.i].x)} y2={H - PAD_B}
               stroke={axis} strokeWidth="1" vectorEffect="non-scaling-stroke" strokeDasharray="3 3" />
           )}
-          {pinData && (
-            <line x1={X(pinData.d.x)} y1="0" x2={X(pinData.d.x)} y2={H - PAD_B}
-              stroke={colors[1]} strokeWidth="1.4" vectorEffect="non-scaling-stroke" />
+          {replayActive && (
+            <ChartPinSvg data={data} tMax={tMax} color={colors[1]} W={W} H={H} padB={PAD_B} />
           )}
         </svg>
-        {pinData && (
-          <>
-            <div className="chart__pin-dot" style={{ left: `${pinData.xRatio * 100}%`, top: `${pinData.yRatio * 100}%` }} />
-            <div className="chart__pin-tip"
-              style={{ left: `${pinData.xRatio * 100}%`, transform: pinData.xRatio > 0.75 ? 'translateX(-100%)' : 'none' }}>
-              <b>{pinData.d.y.toFixed(1)}</b> {unit} · <span>{fmtDuration(pinData.d.x)}</span>
-            </div>
-          </>
-        )}
         {hp && (
           <div className="chart__tip"
             style={{ left: `${hover!.px * 100}%`, transform: hover!.px > 0.8 ? 'translateX(-100%)' : 'none' }}>
             <b>{hp.y.toFixed(1)}</b> {unit}<br />
             <span>{fmtDuration(hp.x)}</span>
           </div>
+        )}
+        {replayActive && (
+          <ChartPinHtml data={data} tMax={tMax} unit={unit} color={colors[1]}
+            W={W} H={H} padB={PAD_B} ys={ys} lo={lo} hi={hi} />
         )}
         <div className="chart__axis">
           <span>{fmtDuration(0)}</span>
@@ -188,4 +171,58 @@ function AreaChart({
       </div>
     </div>
   );
-}
+});
+
+/** 回放指针（SVG 针线）：独立订阅 store，只重渲染自己 */
+const ChartPinSvg = memo(function ChartPinSvg({
+  data, tMax, color, W, H, padB,
+}: {
+  data: { x: number; y: number }[];
+  tMax: number;
+  color: string;
+  W: number;
+  H: number;
+  padB: number;
+}) {
+  const st = useSyncExternalStore(replayStore.subscribe, replayStore.get);
+  if (st.rideId == null || data.length === 0) return null;
+  const idx = Math.max(0, Math.min(data.length - 1, Math.round(st.progress * (data.length - 1))));
+  const d = data[idx];
+  const x = tMax > 0 ? (d.x / tMax) * W : 0;
+  return (
+    <line x1={x} y1="0" x2={x} y2={H - padB}
+      stroke={color} strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
+  );
+});
+
+/** 回放指针（HTML 光点 + 数值气泡） */
+const ChartPinHtml = memo(function ChartPinHtml({
+  data, tMax, unit, color, W, H, padB, ys, lo, hi,
+}: {
+  data: { x: number; y: number }[];
+  tMax: number;
+  unit: string;
+  color: string;
+  W: number;
+  H: number;
+  padB: number;
+  ys: number[];
+  lo: number;
+  hi: number;
+}) {
+  const st = useSyncExternalStore(replayStore.subscribe, replayStore.get);
+  if (st.rideId == null || data.length === 0) return null;
+  const idx = Math.max(0, Math.min(data.length - 1, Math.round(st.progress * (data.length - 1))));
+  const d = data[idx];
+  const xPct = ((tMax > 0 ? (d.x / tMax) * W : 0) / W) * 100;
+  const yPx = H - padB - ((d.y - lo) / (hi - lo)) * (H - padB - 8);
+  return (
+    <>
+      <div className="chart__pin-dot" style={{ left: `${xPct}%`, top: `${(yPx / H) * 100}%`, borderColor: 'var(--bg-0)', boxShadow: `0 0 10px ${color}` }} />
+      <div className="chart__pin-tip"
+        style={{ left: `${xPct}%`, borderColor: color, transform: xPct > 72 ? 'translateX(-100%)' : 'none' }}>
+        <b>{d.y.toFixed(1)}</b> {unit} · <span>{fmtDuration(d.x)}</span>
+      </div>
+    </>
+  );
+});

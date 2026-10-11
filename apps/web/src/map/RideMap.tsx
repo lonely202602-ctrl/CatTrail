@@ -5,6 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { buildStyle, trailPalette, type TrailTheme } from './mapStyle';
 import type { RouteCluster } from '@lonelycat/shared';
 import type { TrackFC } from '../data/adapter';
+import { replayStore } from '../lib/replayStore';
 
 interface Props {
   tracks: TrackFC | null;
@@ -14,15 +15,16 @@ interface Props {
   selectedClusterId: string | null;
   /** 定位面板聚焦的骑行集合（飞过去） */
   focusRideIds: number[] | null;
-  /** 骑行回放：{ 线路 id, 进度 0..1 }，抽屉与地图共享同一进度 */
-  replay: { rideId: number; progress: number } | null;
+  /** 骑行回放的线路 id（null = 停止）；进度由内部 RAF 写入 replayStore */
+  replayRideId: number | null;
+  onReplayEnd: () => void;
   onSelect: (rideId: number) => void;
   onSelectCluster: (clusterId: string) => void;
   onOpenDetail: (rideId: number) => void;
 }
 
 export default function RideMap({
-  tracks, clusters, theme, selectedId, selectedClusterId, focusRideIds, replay, onSelect, onSelectCluster, onOpenDetail,
+  tracks, clusters, theme, selectedId, selectedClusterId, focusRideIds, replayRideId, onReplayEnd, onSelect, onSelectCluster, onOpenDetail,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -307,57 +309,87 @@ export default function RideMap({
     if (fs.length > 0) flyToBounds(map, fs);
   }, [focusRideIds, tracks]);
 
-  // 骑行回放：光点沿轨迹移动 + 已骑路径高亮（进度由 App 统一驱动，与图表指针同步）
+  // 骑行回放：RAF 命令式驱动（60fps 光点 + line-gradient 已骑高亮），进度写入 store 供图表指针订阅
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !tracks) return;
-    if (!replay) {
-      markerRef.current?.remove();
-      markerRef.current = null;
-      if (map.getLayer('replay-line')) {
-        (map.getSource('replay-line') as maplibregl.GeoJSONSource)?.setData({
-          type: 'FeatureCollection',
-          features: [],
-        });
-      }
-      return;
-    }
-    const f = tracks.features.find((x) => x.properties.rideId === replay.rideId);
-    if (!f || f.geometry.coordinates.length < 2) return;
-    const coords = f.geometry.coordinates;
+    let raf = 0;
 
-    if (!markerRef.current) {
-      const el = document.createElement('div');
-      el.className = 'replay-dot';
-      markerRef.current = new maplibregl.Marker({ element: el }).setLngLat(coords[0]).addTo(map);
-      if (!map.getSource('replay-line')) {
-        map.addSource('replay-line', {
-          type: 'geojson',
-          data: { type: 'FeatureCollection', features: [] },
-        });
-        map.addLayer({
-          id: 'replay-line',
-          type: 'line',
-          source: 'replay-line',
-          layout: { 'line-cap': 'round' },
-          paint: { 'line-color': '#ffe9d6', 'line-width': 3.5, 'line-opacity': 0.95 },
-        });
+    const begin = () => {
+      if (replayRideId == null) {
+        replayStore.stop();
+        markerRef.current?.remove();
+        markerRef.current = null;
+        if (map.getLayer('replay-line')) {
+          (map.getSource('replay-line') as maplibregl.GeoJSONSource)?.setData({
+            type: 'FeatureCollection',
+            features: [],
+          });
+        }
+        return;
       }
-    }
+      const f = tracks.features.find((x) => x.properties.rideId === replayRideId);
+      if (!f || f.geometry.coordinates.length < 2) return;
+      const coords = f.geometry.coordinates;
 
-    const idx = Math.min(coords.length - 1, Math.floor(replay.progress * (coords.length - 1)));
-    markerRef.current?.setLngLat(coords[idx]);
-    (map.getSource('replay-line') as maplibregl.GeoJSONSource)?.setData({
-      type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          properties: {},
-          geometry: { type: 'LineString', coordinates: coords.slice(0, idx + 1) },
-        },
-      ],
-    });
-  }, [replay, tracks]);
+      if (!markerRef.current) {
+        const el = document.createElement('div');
+        el.className = 'replay-dot';
+        markerRef.current = new maplibregl.Marker({ element: el }).setLngLat(coords[0]).addTo(map);
+        if (!map.getSource('replay-line')) {
+          // lineMetrics 让 line-progress 沿实际里程分布，配合 line-gradient 实现“已骑高亮”
+          map.addSource('replay-line', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] },
+            lineMetrics: true,
+          });
+          map.addLayer({
+            id: 'replay-line',
+            type: 'line',
+            source: 'replay-line',
+            layout: { 'line-cap': 'round' },
+            paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, 'rgba(0,0,0,0)', 1, 'rgba(0,0,0,0)'] },
+          });
+        }
+      }
+
+      replayStore.start(replayRideId);
+      const DUR = 20000;
+      const start = performance.now();
+      const tick = (now: number) => {
+        // 换肤/销毁期间图层可能暂时不存在，跳过这一帧即可
+        if (!map.getSource('replay-line') || !markerRef.current) return;
+        try {
+          const p = Math.min(1, (now - start) / DUR);
+          const idx = Math.min(coords.length - 1, Math.floor(p * (coords.length - 1)));
+          markerRef.current.setLngLat(coords[idx]);
+          // 已骑高亮：更新 line-gradient（仅重绘该图层，无数据重铺）
+          const g = ['interpolate', ['linear'], ['line-progress'], 0, '#ffe9d6', Math.max(0.001, p), '#ffe9d6', Math.min(1, p + 0.002), 'rgba(255,233,214,0)', 1, 'rgba(255,233,214,0)'];
+          map.setPaintProperty('replay-line', 'line-gradient', g);
+          replayStore.update(replayRideId, p);
+          if (p < 1) {
+            raf = requestAnimationFrame(tick);
+          } else {
+            setTimeout(() => {
+              replayStore.stop();
+              handlers.current.onReplayEnd();
+            }, 1200);
+          }
+        } catch {
+          // 底图换肤瞬间可能抛错，跳过一帧
+        }
+      };
+      raf = requestAnimationFrame(tick);
+    };
+
+    // 样式未就绪时（慢网络）等 load 再启动，避免 "Style is not done loading" 异常
+    if (map.isStyleLoaded()) begin();
+    else map.once('load', begin);
+
+    return () => {
+      cancelAnimationFrame(raf);
+    };
+  }, [replayRideId, tracks]);
 
   return <div ref={containerRef} className="map-canvas" style={{ position: 'absolute', inset: 0 }} />;
 }
