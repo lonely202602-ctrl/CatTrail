@@ -1,11 +1,14 @@
-/** 同步编排：登录 → 列表 → 增量详情 → FIT → 轨迹 → 入库 + 落盘静态快照 */
+/** 同步编排：登录 → 列表 → 增量详情 → FIT → 轨迹+逐秒序列 → 入库 + 落盘静态快照 */
 import fs from 'node:fs';
 import path from 'node:path';
-import type { RidesIndex, RideInfo, RideRecord } from '@lonelycat/shared';
+import type { RideSeriesPoint, RideRecord, RidesIndex, RideInfo } from '@lonelycat/shared';
 import { getEdgeKeys, login, listAllActivities, getActivityDetail, downloadFit, sleep } from '../igpsport/client.js';
 import { parseFit } from '../igpsport/fit.js';
-import { openDb, upsertRide, getStoredRideIds, listRides } from '../store/db.js';
+import { openDb, upsertRide, getStoredSeriesVersions, listRides } from '../store/db.js';
 import { buildClusters } from '../clusters/cluster.js';
+
+/** 序列数据结构版本：结构变更时 +1，旧记录自动回填重拉 */
+const SERIES_V = 1;
 
 export interface SyncOptions {
   username: string;
@@ -30,6 +33,18 @@ function haversine(a: [number, number], b: [number, number]): number {
   return 2 * 6371000 * Math.asin(Math.sqrt(h));
 }
 
+/** FIT 采样点 → 逐秒序列（t 相对起始秒；无时间戳时按 1s 采样兜底） */
+function buildSeries(points: ReturnType<typeof parseFit> extends Promise<infer P> ? P : never[]): RideSeriesPoint[] {
+  const first = points.find((p) => p.time)?.time;
+  const t0 = first ? Date.parse(first) : null;
+  return points.map((p, i) => ({
+    t: t0 != null && p.time ? Math.round((Date.parse(p.time) - t0) / 1000) : i,
+    s: p.spd != null ? Math.round(p.spd * 10) / 10 : undefined,
+    a: p.alt != null ? Math.round(p.alt * 10) / 10 : undefined,
+    h: p.hr ?? undefined,
+  }));
+}
+
 export async function runSync(opts: SyncOptions): Promise<SyncSummary> {
   const { username, password, dataDir, intervalMs = 1100 } = opts;
   openDb();
@@ -38,12 +53,12 @@ export async function runSync(opts: SyncOptions): Promise<SyncSummary> {
   const session = await login(keys, username, password);
   const rows = await listAllActivities(keys, session.access_token);
 
-  const known = getStoredRideIds();
+  const versions = getStoredSeriesVersions();
   let added = 0;
   let skipped = 0;
 
   for (const row of rows) {
-    if (known.has(row.rideId)) {
+    if (versions.get(row.rideId) === SERIES_V) {
       skipped++;
       continue;
     }
@@ -65,11 +80,15 @@ export async function runSync(opts: SyncOptions): Promise<SyncSummary> {
       device: row.productName ?? 'iGPSPORT',
       fitUrl: detail.fitUrl,
       track,
+      series: buildSeries(points),
+      calorie: detail.calorie,
+      maxSpeedKmh: Math.round((detail.maxSpeed ?? 0) * 3.6 * 10) / 10,
     };
-    upsertRide(record);
+    upsertRide(record, SERIES_V);
     writeRideSnapshot(dataDir, record);
+    writeSeriesSnapshot(dataDir, record);
     added++;
-    console.log(`  + ${record.date} ${record.title}: ${record.distanceKm}km / ${track.length} 点`);
+    console.log(`  + ${record.date} ${record.title}: ${record.distanceKm}km / ${track.length} 点 / ${record.series?.length ?? 0} 序列点`);
   }
 
   // 重写聚合快照
@@ -102,6 +121,15 @@ function writeRideSnapshot(dataDir: string, ride: RideRecord) {
   fs.writeFileSync(path.join(dataDir, 'rides', `${ride.rideId}.geojson`), JSON.stringify(gj));
 }
 
+/** 逐秒序列快照（data/series/{rideId}.json，轨迹分析抽屉按需加载） */
+export function writeSeriesSnapshot(dataDir: string, ride: RideRecord) {
+  ensureDir(path.join(dataDir, 'series'));
+  fs.writeFileSync(
+    path.join(dataDir, 'series', `${ride.rideId}.json`),
+    JSON.stringify({ rideId: ride.rideId, series: ride.series ?? [] }),
+  );
+}
+
 function toInfo(r: RideRecord): RideInfo {
   return {
     rideId: r.rideId,
@@ -112,6 +140,8 @@ function toInfo(r: RideRecord): RideInfo {
     ascentM: r.ascentM,
     avgSpeedKmh: r.avgSpeedKmh,
     device: r.device,
+    calorie: r.calorie,
+    maxSpeedKmh: r.maxSpeedKmh,
   };
 }
 

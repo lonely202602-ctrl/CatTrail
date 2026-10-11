@@ -6,6 +6,7 @@ export interface TrackPoint {
   lng: number;
   alt?: number;
   hr?: number;
+  spd?: number;
   time?: string;
 }
 
@@ -49,6 +50,7 @@ export async function parseFit(buf: Buffer): Promise<TrackPoint[]> {
       lng,
       alt: (r.enhanced_altitude ?? r.altitude) ?? undefined,
       hr: r.heart_rate ?? undefined,
+      spd: r.speed ?? undefined,
       time: r.timestamp ? new Date(r.timestamp as string).toISOString() : undefined,
     });
   }

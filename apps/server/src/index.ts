@@ -70,10 +70,24 @@ app.get('/api/tracks', async () => {
 /** 猫径：相似线路聚类（实时计算，与 data/clusters.json 同构） */
 app.get('/api/clusters', async () => buildClusters(ridesOrSeed()));
 
+/** 逐秒序列（轨迹分析抽屉用；数据库优先，回退静态快照） */
+app.get('/api/series/:rideId', async (req, reply) => {
+  const rideId = Number((req.params as { rideId: string }).rideId);
+  if (!Number.isFinite(rideId)) return reply.code(400).send({ error: 'bad rideId' });
+  const ride = listRides().find((r) => r.rideId === rideId);
+  if (ride?.series) return { rideId, series: ride.series };
+  const raw = readStaticData(`series/${rideId}.json`);
+  if (raw) {
+    reply.header('content-type', 'application/json; charset=utf-8');
+    return raw;
+  }
+  return reply.code(404).send({ error: 'not found' });
+});
+
 /** 静态快照直读（演示模式与 /data 契约） */
 app.get('/data/:file', async (req, reply) => {
   const { file } = req.params as { file: string };
-  if (!/^[\w.-]+\.json$/.test(file)) return reply.code(400).send({ error: 'bad file' });
+  if (!/^[\w-]+(\/[\w-]+)?\.json$/.test(file)) return reply.code(400).send({ error: 'bad file' });
   const raw = readStaticData(file);
   if (raw == null) return reply.code(404).send({ error: 'not found' });
   reply.header('content-type', 'application/json; charset=utf-8');

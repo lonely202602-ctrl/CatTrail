@@ -1,5 +1,5 @@
 /** 数据适配器：服务端模式（/api）与静态演示模式（/data 快照）共用一套契约 */
-import type { ClustersIndex, RidesIndex } from '@lonelycat/shared';
+import type { ClustersIndex, RideSeriesPoint, RidesIndex } from '@lonelycat/shared';
 
 export const DATA_MODE = (import.meta.env.VITE_DATA_MODE as 'server' | 'static' | undefined) ?? 'server';
 
@@ -15,6 +15,14 @@ export async function fetchClusters(): Promise<ClustersIndex> {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`加载猫径失败 (${r.status})`);
   return r.json();
+}
+
+export async function fetchSeries(rideId: number): Promise<RideSeriesPoint[]> {
+  const url = DATA_MODE === 'static' ? `/series/${rideId}.json` : `/api/series/${rideId}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`加载序列失败 (${r.status})`);
+  const d = (await r.json()) as { rideId: number; series: RideSeriesPoint[] };
+  return d.series ?? [];
 }
 
 export interface TrackFC {

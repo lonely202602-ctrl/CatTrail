@@ -1,44 +1,50 @@
-/** MapLibre 地图封装：夜巡底图 + 轨迹发光图层 + 猫径高亮 + 弹窗（次数/最佳成绩） */
+/** MapLibre 地图封装：主题化底图 + 渐进描线动画 + 历史小卡片 + 双击打开轨迹分析 */
 import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { buildNightCatStyle } from './mapStyle';
+import { buildStyle, trailPalette, type TrailTheme } from './mapStyle';
 import type { RouteCluster } from '@lonelycat/shared';
 import type { TrackFC } from '../data/adapter';
 
 interface Props {
   tracks: TrackFC | null;
   clusters: RouteCluster[];
+  theme: TrailTheme;
   selectedId: number | null;
   selectedClusterId: string | null;
   onSelect: (rideId: number) => void;
   onSelectCluster: (clusterId: string) => void;
+  onOpenDetail: (rideId: number) => void;
 }
 
-export default function RideMap({ tracks, clusters, selectedId, selectedClusterId, onSelect, onSelectCluster }: Props) {
+export default function RideMap({
+  tracks, clusters, theme, selectedId, selectedClusterId, onSelect, onSelectCluster, onOpenDetail,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
   const tracksRef = useRef<TrackFC | null>(null);
-  const clustersRef = useRef<RouteCluster[]>([]);
-  const onSelectRef = useRef(onSelect);
-  const onSelectClusterRef = useRef(onSelectCluster);
-  onSelectRef.current = onSelect;
-  onSelectClusterRef.current = onSelectCluster;
+  const clustersRef = useRef<RouteCluster[]>(clusters);
+  const selectedClusterRef = useRef<string | null>(selectedClusterId);
+  const handlers = useRef({ onSelect, onSelectCluster, onOpenDetail, theme });
+  handlers.current = { onSelect, onSelectCluster, onOpenDetail, theme };
+  tracksRef.current = tracks;
+  clustersRef.current = clusters;
+  selectedClusterRef.current = selectedClusterId;
 
   // 初始化地图（一次）
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: buildNightCatStyle(),
+      style: buildStyle(handlers.current.theme),
       center: [113.38, 23.07],
       zoom: 11,
       attributionControl: false,
       renderWorldCopies: false,
     });
+    map.doubleClickZoom.disable(); // 双击留给「轨迹分析」
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-    map.dragPan.enable({ inertia: 400 });
     (window as unknown as { __map?: maplibregl.Map }).__map = map;
     (window as unknown as { __mapErrors: string[] }).__mapErrors = [];
     map.on('error', (e) => {
@@ -49,7 +55,7 @@ export default function RideMap({ tracks, clusters, selectedId, selectedClusterI
     mapRef.current = map;
 
     map.on('load', () => {
-      if (tracksRef.current) addTracks(map, tracksRef.current, clustersRef.current, onSelectRef, onSelectClusterRef);
+      if (tracksRef.current) mountTracks(map, tracksRef.current);
     });
 
     return () => {
@@ -62,14 +68,21 @@ export default function RideMap({ tracks, clusters, selectedId, selectedClusterI
   useEffect(() => {
     tracksRef.current = tracks;
     const map = mapRef.current;
-    if (map && tracks && map.isStyleLoaded()) addTracks(map, tracks, clustersRef.current, onSelectRef, onSelectClusterRef);
+    if (map && tracks && map.isStyleLoaded()) mountTracks(map, tracks);
   }, [tracks]);
 
+  // 主题切换 → 重建底图样式并重挂轨迹（换肤时路线重新“骑”一遍）
   useEffect(() => {
-    clustersRef.current = clusters;
-  }, [clusters]);
+    const map = mapRef.current;
+    if (!map || !map.loaded()) return;
+    map.setStyle(buildStyle(theme), { diff: false });
+    map.once('style.load', () => {
+      if (tracksRef.current) mountTracks(map, tracksRef.current);
+      applyClusterFilter(map, selectedClusterRef.current, clustersRef.current);
+    });
+  }, [theme]);
 
-  // 选中骑行 → 平滑飞行 + 弹窗信息由点击时展示
+  // 选中骑行 → 平滑飞行
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !tracks || selectedId == null) return;
@@ -83,20 +96,200 @@ export default function RideMap({ tracks, clusters, selectedId, selectedClusterI
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
-      const ids = clusters.find((c) => c.id === selectedClusterId)?.rideIds ?? [];
-      const src = map.getSource('tracks') as maplibregl.GeoJSONSource | undefined;
-      if (!src) return;
-      if (map.getLayer('cluster-hi')) {
-        map.setFilter('cluster-hi', ['in', ['get', 'rideId'], ['literal', ids]]);
-      }
-      if (selectedClusterId != null && ids.length > 0) {
-        const fs = tracks?.features.filter((f) => ids.includes(f.properties.rideId)) ?? [];
+      applyClusterFilter(map, selectedClusterId, clustersRef.current);
+      if (selectedClusterId != null) {
+        const ids = clustersRef.current.find((c) => c.id === selectedClusterId)?.rideIds ?? [];
+        const fs = tracksRef.current?.features.filter((f) => ids.includes(f.properties.rideId)) ?? [];
         if (fs.length > 0) flyToBounds(map, fs);
       }
     };
     if (map.isStyleLoaded()) apply();
     else map.once('load', apply);
   }, [selectedClusterId, clusters, tracks]);
+
+  /** 挂载轨迹图层 + 渐进描线动画 + 交互（幂等：换肤后重复调用安全） */
+  function mountTracks(map: maplibregl.Map, fc: TrackFC) {
+    const C = trailPalette(handlers.current.theme);
+
+    if (!map.getSource('tracks')) {
+      const stub = {
+        type: 'FeatureCollection',
+        features: fc.features.map((f) => ({
+          type: 'Feature',
+          properties: f.properties,
+          geometry: { type: 'LineString', coordinates: f.geometry.coordinates.slice(0, 2) },
+        })),
+      } as TrackFC;
+      map.addSource('tracks', { type: 'geojson', data: stub });
+
+      map.addLayer({
+        id: 'track-glow', type: 'line', source: 'tracks',
+        paint: { 'line-color': C.track, 'line-width': 14, 'line-opacity': 0.28, 'line-blur': 5 },
+      });
+      map.addLayer({
+        id: 'track-halo', type: 'line', source: 'tracks',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': C.halo, 'line-width': 5.5, 'line-opacity': 0.5 },
+      });
+      map.addLayer({
+        id: 'track-draw', type: 'line', source: 'tracks',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': C.track,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2, 14, 4],
+          'line-opacity': 0.98,
+        },
+      });
+      map.addLayer({
+        id: 'cluster-hi', type: 'line', source: 'tracks',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        filter: ['in', ['get', 'rideId'], ['literal', []]],
+        paint: { 'line-color': C.hi, 'line-width': 2.2, 'line-opacity': 0.95 },
+      });
+
+      // 渐进描线：路线被“骑”出来（尊重系统减少动态偏好；后台标签页也能完成）
+      const src = map.getSource('tracks') as maplibregl.GeoJSONSource;
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        src.setData(fc);
+      } else {
+        const start = performance.now();
+        const DUR = 2200;
+        const tick = () => {
+          if (!map.getSource('tracks')) return; // 地图已销毁
+          const p = Math.min(1, (performance.now() - start) / DUR);
+          const e = 1 - Math.pow(1 - p, 3);
+          src.setData({
+            type: 'FeatureCollection',
+            features: fc.features.map((f) => {
+              const coords = f.geometry.coordinates;
+              const k = Math.max(2, Math.round(coords.length * e));
+              return {
+                type: 'Feature' as const,
+                properties: f.properties,
+                geometry: { type: 'LineString' as const, coordinates: coords.slice(0, k) },
+              };
+            }),
+          } as TrackFC);
+          if (p < 1) setTimeout(tick, 16);
+          else src.setData(fc);
+        };
+        setTimeout(tick, 16);
+      }
+
+      // 起点猫爪标记（canvas 现场生成）
+      map.loadImage(pawDataUrl(), (err, image) => {
+        if (err || !image || !map.getSource('tracks') || map.hasImage('paw')) return;
+        map.addImage('paw', image);
+        const starts = {
+          type: 'FeatureCollection',
+          features: fc.features.map((f) => ({
+            type: 'Feature',
+            properties: { rideId: f.properties.rideId },
+            geometry: { type: 'Point', coordinates: f.geometry.coordinates[0] },
+          })),
+        } as GeoJSON.FeatureCollection;
+        map.addLayer({
+          id: 'start-paw',
+          type: 'symbol',
+          source: { type: 'geojson', data: starts },
+          layout: { 'image': 'paw', 'icon-size': 0.45, 'icon-allow-overlap': true },
+        });
+      });
+    } else {
+      (map.getSource('tracks') as maplibregl.GeoJSONSource).setData(fc);
+      if (map.getLayer('track-glow')) map.setPaintProperty('track-glow', 'line-color', C.track);
+      if (map.getLayer('track-halo')) map.setPaintProperty('track-halo', 'line-color', C.halo);
+      if (map.getLayer('track-draw')) map.setPaintProperty('track-draw', 'line-color', C.track);
+      if (map.getLayer('cluster-hi')) map.setPaintProperty('cluster-hi', 'line-color', C.hi);
+      return;
+    }
+
+    // 交互：单击 → 历史小卡片；双击 → 轨迹分析抽屉
+    ['track-draw', 'track-halo', 'track-glow'].forEach((id) => {
+      map.on('mouseenter', id, () => (map.getCanvas().style.cursor = 'pointer'));
+      map.on('mouseleave', id, () => (map.getCanvas().style.cursor = ''));
+      map.on('click', id, (e) => {
+        const p = e.features?.[0]?.properties;
+        if (!p) return;
+        const rideId = Number(p.rideId);
+        handlers.current.onSelect(rideId);
+        showHistoryCard(map, e.lngLat, p, clustersRef.current, (id) => handlers.current.onOpenDetail(id));
+      });
+      map.on('dblclick', id, (e) => {
+        const p = e.features?.[0]?.properties;
+        if (!p) return;
+        e.preventDefault();
+        handlers.current.onOpenDetail(Number(p.rideId));
+      });
+    });
+    map.on('click', (e) => {
+      const hit = ['track-draw', 'track-halo', 'track-glow'].some((id) =>
+        map.queryRenderedFeatures(e.point, { layers: [id] }).length > 0,
+      );
+      if (!hit) handlers.current.onSelectCluster('');
+    });
+  }
+
+  function applyClusterFilter(map: maplibregl.Map, clusterId: string | null, cls: RouteCluster[]) {
+    const src = map.getSource('tracks') as maplibregl.GeoJSONSource | undefined;
+    if (!src || !map.getLayer('cluster-hi')) return;
+    const ids = cls.find((c) => c.id === clusterId)?.rideIds ?? [];
+    map.setFilter('cluster-hi', ['in', ['get', 'rideId'], ['literal', ids]]);
+  }
+
+  /** 单击线路 → 历史骑行小卡片 */
+  function showHistoryCard(
+    map: maplibregl.Map,
+    lngLat: maplibregl.LngLat,
+    p: Record<string, unknown>,
+    cls: RouteCluster[],
+    openDetail: (id: number) => void,
+  ) {
+    const rideId = Number(p.rideId);
+    const cluster = cls.find((c) => c.rideIds.includes(rideId));
+    const propOf = (id: number) => tracksRef.current?.features.find((f) => f.properties.rideId === id)?.properties;
+
+    let rows: string;
+    if (cluster) {
+      rows = cluster.rideIds
+        .map((id) => ({ id, prop: propOf(id) }))
+        .filter((r) => r.prop)
+        .sort((a, b) => String(b.prop!.date).localeCompare(String(a.prop!.date)))
+        .map(({ id, prop }) => {
+          const best = cluster.bestRideId === id;
+          return (
+            `<div class="hist-row${best ? ' best' : ''}" data-open="${id}">` +
+            `<span>${String(prop!.date).slice(5, 16)}</span>` +
+            `<b>${Number(prop!.distanceKm).toFixed(1)} km</b>` +
+            `<span>${Number(prop!.avgSpeedKmh).toFixed(1)} km/h</span>` +
+            `${best ? '<i>🏆</i>' : ''}</div>`
+          );
+        })
+        .join('');
+    } else {
+      rows =
+        `<div class="hist-row" data-open="${rideId}"><span>${String(p.date).slice(5, 16)}</span>` +
+        `<b>${Number(p.distanceKm).toFixed(1)} km</b>` +
+        `<span>${Number(p.avgSpeedKmh).toFixed(1)} km/h</span></div>`;
+    }
+
+    const head = cluster
+      ? `🐾 猫径 · 骑过 <b>${cluster.count}</b> 次`
+      : `🐾 ${p.title}`;
+
+    popupRef.current?.remove();
+    const popup = new maplibregl.Popup({ closeButton: false, maxWidth: '290px' })
+      .setLngLat(lngLat)
+      .setHTML(
+        `<div class="hist-card"><div class="hist-head">${head}</div>${rows}` +
+          `<div class="hist-hint">点击行查看轨迹分析 · 双击线路直达</div></div>`,
+      )
+      .addTo(map);
+    popup.getElement()?.querySelectorAll('[data-open]').forEach((el) => {
+      el.addEventListener('click', () => openDetail(Number((el as HTMLElement).dataset.open)));
+    });
+    popupRef.current = popup;
+  }
 
   return <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />;
 }
@@ -111,129 +304,7 @@ function flyToBounds(map: maplibregl.Map, features: TrackFC['features'][]) {
     }
   }
   if (n === 0) return;
-  map.fitBounds(b, { padding: { top: 90, bottom: 90, left: 400, right: 90 }, duration: 1600, essential: true });
-}
-
-function addTracks(
-  map: maplibregl.Map,
-  fc: TrackFC,
-  clusters: RouteCluster[],
-  onSelectRef: React.RefObject<(id: number) => void>,
-  onSelectClusterRef: React.RefObject<(id: string) => void>,
-) {
-  if (map.getSource('tracks')) {
-    (map.getSource('tracks') as maplibregl.GeoJSONSource).setData(fc);
-    return;
-  }
-  map.addSource('tracks', { type: 'geojson', data: fc });
-
-  // 轨迹描线动画：line-dasharray 循环，路线像被“骑”出来
-  const dashSeq = [
-    [0, 4, 3], [0.5, 4, 2.5], [1, 4, 2], [1.5, 4, 1.5], [2, 4, 1],
-    [2.5, 4, 0.5], [3, 4, 0], [0, 0.5, 4], [0, 1, 4], [0, 1.5, 4], [0, 2, 4], [0, 2.5, 4], [0, 3, 4], [0, 3.5, 4],
-  ];
-  let step = 0;
-  const dashTimer = setInterval(() => {
-    step = (step + 1) % dashSeq.length;
-    if (map.getLayer('track-draw')) map.setPaintProperty('track-draw', 'line-dasharray', dashSeq[step]);
-  }, 60);
-  map.once('remove', () => clearInterval(dashTimer));
-
-  map.addLayer({
-    id: 'track-glow',
-    type: 'line',
-    source: 'tracks',
-    paint: { 'line-color': '#ff6b35', 'line-width': 12, 'line-opacity': 0.22, 'line-blur': 4 },
-  });
-  map.addLayer({
-    id: 'track-halo',
-    type: 'line',
-    source: 'tracks',
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': '#ff8a5c', 'line-width': 5, 'line-opacity': 0.45 },
-  });
-  map.addLayer({
-    id: 'track-draw',
-    type: 'line',
-    source: 'tracks',
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: {
-      'line-color': '#ff6b35',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2, 14, 4],
-      'line-opacity': 0.98,
-    },
-  });
-  // 猫径高亮层（选中的聚类整组亮起）
-  map.addLayer({
-    id: 'cluster-hi',
-    type: 'line',
-    source: 'tracks',
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    filter: ['in', ['get', 'rideId'], ['literal', []]],
-    paint: { 'line-color': '#ffe9d6', 'line-width': 2.4, 'line-opacity': 0.95 },
-  });
-
-  // 起点猫爪标记（canvas 现场生成，无外部图片资源）
-  map.loadImage(pawDataUrl(), (err, image) => {
-    if (err || !image || map.hasImage('paw')) return;
-    map.addImage('paw', image);
-    const starts = {
-      type: 'FeatureCollection',
-      features: fc.features.map((f) => ({
-        type: 'Feature',
-        properties: { rideId: f.properties.rideId },
-        geometry: { type: 'Point', coordinates: f.geometry.coordinates[0] },
-      })),
-    } as GeoJSON.FeatureCollection;
-    map.addLayer({
-      id: 'start-paw',
-      type: 'symbol',
-      source: { type: 'geojson', data: starts },
-      layout: { 'image': 'paw', 'icon-size': 0.45, 'icon-allow-overlap': true },
-    });
-  });
-
-  // 交互
-  ['track-draw', 'track-halo', 'track-glow'].forEach((id) => {
-    map.on('mouseenter', id, () => (map.getCanvas().style.cursor = 'pointer'));
-    map.on('mouseleave', id, () => (map.getCanvas().style.cursor = ''));
-    map.on('click', id, (e) => {
-      const p = e.features?.[0]?.properties;
-      if (!p) return;
-      const rideId = Number(p.rideId);
-      onSelectRef.current(rideId);
-      const cluster = clusters.find((c) => c.rideIds.includes(rideId));
-      showPopup(map, e.lngLat, p, cluster);
-    });
-  });
-
-  // 弹窗关闭即清猫径高亮
-  map.on('click', (e) => {
-    const hit = ['track-draw', 'track-halo', 'track-glow'].some((id) =>
-      map.queryRenderedFeatures(e.point, { layers: [id] }).length > 0,
-    );
-    if (!hit) onSelectClusterRef.current('');
-  });
-}
-
-function showPopup(map: maplibregl.Map, lngLat: maplibregl.LngLat, p: Record<string, unknown>, cluster?: RouteCluster) {
-  popupRef.current?.remove();
-  const rideId = Number(p.rideId);
-  let clusterLine = '';
-  if (cluster) {
-    const isBest = cluster.bestRideId === rideId;
-    clusterLine = `<br>🐾 猫径：已骑过 <b>${cluster.count}</b> 次${isBest ? ' · <b>🏆 本次最佳</b>' : ' · 最佳 ' + cluster.bestAvgSpeedKmh + ' km/h'}`;
-  }
-  popupRef.current = new maplibregl.Popup({ closeButton: false, maxWidth: '260px' })
-    .setLngLat(lngLat)
-    .setHTML(
-      `<b>🐾 ${p.title}</b><br>` +
-        `${p.date}<br>` +
-        `里程 <b>${p.distanceKm} km</b> · 爬升 <b>${p.ascentM} m</b><br>` +
-        `均速 <b>${p.avgSpeedKmh} km/h</b> · ${p.device}` +
-        clusterLine,
-    )
-    .addTo(map);
+  map.fitBounds(b, { padding: { top: 90, bottom: 90, left: 400, right: 460 }, duration: 1600, essential: true });
 }
 
 /** 程序生成的猫爪印贴图（64×64，主题橙） */
@@ -249,9 +320,9 @@ function pawDataUrl(): string {
     ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
     ctx.fill();
   };
-  ellipse(32, 42, 13, 11);            // 掌
-  ellipse(16, 24, 6.5, 7.5, -0.25);   // 左趾
-  ellipse(32, 17, 6.5, 7.5);          // 中趾
-  ellipse(48, 24, 6.5, 7.5, 0.25);    // 右趾
+  ellipse(32, 42, 13, 11);
+  ellipse(16, 24, 6.5, 7.5, -0.25);
+  ellipse(32, 17, 6.5, 7.5);
+  ellipse(48, 24, 6.5, 7.5, 0.25);
   return c.toDataURL();
 }

@@ -202,3 +202,190 @@ body {
 .cluster-item .meta { font-size: 11px; color: var(--ink-2); margin-top: 2px; }
 .cluster-item .meta b { color: var(--cat-amber); }
 .cluster-item .arrow { margin-left: auto; color: var(--ink-3); }
+
+/* ============================================
+   晨巡（亮色）主题 —— 暖白纸感 × 深橙轨迹
+   ============================================ */
+:root[data-theme='day'] {
+  --bg-0: #f4f1e8;
+  --bg-1: rgba(255, 253, 248, 0.9);
+  --bg-2: rgba(20, 25, 35, 0.06);
+  --line: rgba(30, 35, 45, 0.13);
+  --ink-1: #1d2430;
+  --ink-2: #5b6472;
+  --ink-3: #9aa0ab;
+  --cat-orange: #e8551f;
+  --cat-amber: #c2410c;
+  --cat-eye: #2f9e8f;
+  --track-glow: rgba(232, 85, 31, 0.22);
+}
+
+:root[data-theme='day'] .panel { box-shadow: 0 12px 40px rgba(30, 30, 20, 0.12); }
+
+/* ============================================
+   主题切换按钮
+   ============================================ */
+.theme-toggle {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 20;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  font-size: 18px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease;
+}
+.theme-toggle:hover { transform: rotate(15deg) scale(1.08); }
+
+/* ============================================
+   历史骑行小卡片（单击线路）
+   ============================================ */
+.hist-card { font-family: var(--font); min-width: 216px; }
+.hist-head { font-size: 12px; margin-bottom: 8px; color: var(--ink-1); }
+.hist-head b { color: var(--cat-amber); }
+.hist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  margin: 2px -4px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  transition: background 0.15s ease;
+}
+.hist-row:hover { background: var(--bg-2); }
+.hist-row.best { background: rgba(255, 179, 71, 0.12); }
+.hist-row b { color: var(--ink-1); }
+.hist-row i { margin-left: auto; font-style: normal; }
+.hist-row span:first-child { min-width: 62px; }
+.hist-hint {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--ink-3);
+  border-top: 1px dashed var(--line);
+  padding-top: 6px;
+}
+
+/* ============================================
+   轨迹分析抽屉（双击线路）
+   ============================================ */
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: min(460px, 94vw);
+  z-index: 30;
+  background: var(--bg-1);
+  backdrop-filter: blur(16px) saturate(1.2);
+  border-left: 1px solid var(--line);
+  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  animation: drawer-in 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes drawer-in {
+  from { transform: translateX(40px); opacity: 0; }
+}
+.drawer__head {
+  padding: 18px 20px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--line);
+}
+.drawer__title { font-size: 16px; font-weight: 700; }
+.drawer__sub { font-size: 11px; color: var(--ink-2); margin-top: 4px; }
+.drawer__close {
+  background: var(--bg-2);
+  border: none;
+  color: var(--ink-2);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.drawer__close:hover { color: var(--ink-1); }
+.drawer__stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.drawer__stats > div { background: var(--bg-1); padding: 12px 8px; text-align: center; }
+.drawer__stats b {
+  display: block;
+  font-size: 15px;
+  color: var(--cat-amber);
+  font-variant-numeric: tabular-nums;
+}
+.drawer__stats span { font-size: 10px; color: var(--ink-3); }
+.drawer__charts {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.drawer__foot {
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.drawer__charts::-webkit-scrollbar { width: 6px; }
+.drawer__charts::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+
+/* 图表 */
+.chart__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.chart__title { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.chart__avg { font-size: 11px; color: var(--ink-3); }
+.chart__avg b { color: var(--ink-1); }
+.chart__body {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: crosshair;
+}
+.chart__tip {
+  position: absolute;
+  top: 8px;
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  pointer-events: none;
+  text-align: center;
+  line-height: 1.5;
+  z-index: 2;
+}
+.chart__tip b { color: var(--cat-amber); }
+.chart__tip span { color: var(--ink-3); font-size: 10px; }
+.chart__axis {
+  position: absolute;
+  bottom: 2px;
+  left: 6px;
+  right: 6px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}

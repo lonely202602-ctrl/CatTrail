@@ -22,6 +22,7 @@ export function openDb(file?: string): DatabaseSync {
       avg_speed   REAL,
       device      TEXT,
       fit_url     TEXT,
+      series_v    INTEGER DEFAULT 0,
       record_json TEXT,
       track_json  TEXT,
       updated_at  TEXT DEFAULT (datetime('now'))
@@ -30,16 +31,16 @@ export function openDb(file?: string): DatabaseSync {
   return db;
 }
 
-export function upsertRide(ride: RideRecord): void {
+export function upsertRide(ride: RideRecord, seriesV = 0): void {
   const d = openDb();
   d.prepare(
-    `INSERT INTO activities (ride_id,title,start_time,distance_m,moving_sec,ascent_m,avg_speed,device,fit_url,record_json,track_json,updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+    `INSERT INTO activities (ride_id,title,start_time,distance_m,moving_sec,ascent_m,avg_speed,device,fit_url,series_v,record_json,track_json,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
      ON CONFLICT(ride_id) DO UPDATE SET
        title=excluded.title, start_time=excluded.start_time, distance_m=excluded.distance_m,
        moving_sec=excluded.moving_sec, ascent_m=excluded.ascent_m, avg_speed=excluded.avg_speed,
-       device=excluded.device, fit_url=excluded.fit_url, record_json=excluded.record_json,
-       track_json=excluded.track_json, updated_at=datetime('now')`,
+       device=excluded.device, fit_url=excluded.fit_url, series_v=excluded.series_v,
+       record_json=excluded.record_json, track_json=excluded.track_json, updated_at=datetime('now')`,
   ).run(
     ride.rideId,
     ride.title,
@@ -50,14 +51,18 @@ export function upsertRide(ride: RideRecord): void {
     ride.avgSpeedKmh,
     ride.device,
     ride.fitUrl,
+    seriesV,
     JSON.stringify(ride),
     JSON.stringify(ride.track),
   );
 }
 
-export function getStoredRideIds(): Set<number> {
+/** rideId → 已存储的序列版本号（用于增量回填判断） */
+export function getStoredSeriesVersions(): Map<number, number> {
   const d = openDb();
-  return new Set(d.prepare('SELECT ride_id FROM activities').all().map((r) => Number(r.ride_id)));
+  return new Map(
+    d.prepare('SELECT ride_id, series_v FROM activities').all().map((r) => [Number(r.ride_id), Number(r.series_v ?? 0)]),
+  );
 }
 
 export function listRides(): RideRecord[] {
