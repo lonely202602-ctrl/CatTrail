@@ -237,11 +237,16 @@ export default function RideMap({
     map.on('mouseenter', 'track-hit', () => (map.getCanvas().style.cursor = 'pointer'));
     map.on('mouseleave', 'track-hit', () => (map.getCanvas().style.cursor = ''));
     map.on('click', 'track-hit', (e) => {
-      const p = e.features?.[0]?.properties;
-      if (!p) return;
-      const rideId = Number(p.rideId);
-      handlers.current.onSelect(rideId);
-      showHistoryCard(map, e.lngLat, p, clustersRef.current, (id) => handlers.current.onOpenDetail(id));
+      // 收集点击处全部线路（去重，保持命中顺序）
+      const seen = new Set<number>();
+      const rides: Array<Record<string, unknown>> = [];
+      for (const f of e.features ?? []) {
+        const id = Number(f.properties.rideId);
+        if (!seen.has(id)) { seen.add(id); rides.push(f.properties); }
+      }
+      if (rides.length === 0) return;
+      handlers.current.onSelect(Number(rides[0].rideId));
+      showHistoryCardMulti(map, e.lngLat, rides, clustersRef.current, (id) => handlers.current.onOpenDetail(id));
     });
     map.on('dblclick', 'track-hit', (e) => {
       const p = e.features?.[0]?.properties;
@@ -317,48 +322,41 @@ export default function RideMap({
     map.setFilter('cluster-hi', ['in', ['get', 'rideId'], ['literal', ids]]);
   }
 
-  /** 单击线路 → 历史骑行小卡片 */
-  function showHistoryCard(
+  /** 单击线路 → 历史骑行卡片（多线重叠时列出全部，点行看详情） */
+  function showHistoryCardMulti(
     map: maplibregl.Map,
     lngLat: maplibregl.LngLat,
-    p: Record<string, unknown>,
+    rides: Array<Record<string, unknown>>,
     cls: RouteCluster[],
     openDetail: (id: number) => void,
   ) {
-    const rideId = Number(p.rideId);
-    const cluster = cls.find((c) => c.rideIds.includes(rideId));
-    const propOf = (id: number) => tracksRef.current?.features.find((f) => f.properties.rideId === id)?.properties;
+    const sorted = [...rides].sort((a, b) => String(b.date).localeCompare(String(a.date)));
 
-    let rows: string;
-    if (cluster) {
-      rows = cluster.rideIds
-        .map((id) => ({ id, prop: propOf(id) }))
-        .filter((r) => r.prop)
-        .sort((a, b) => String(b.prop!.date).localeCompare(String(a.prop!.date)))
-        .map(({ id, prop }) => {
-          const best = cluster.bestRideId === id;
-          return (
-            `<div class="hist-row${best ? ' best' : ''}" data-open="${id}">` +
-            `<span>${String(prop!.date).slice(5, 16)}</span>` +
-            `<b>${Number(prop!.distanceKm).toFixed(1)} km</b>` +
-            `<span>${Number(prop!.avgSpeedKmh).toFixed(1)} km/h</span>` +
-            `${best ? '<i>🏆</i>' : ''}</div>`
-          );
-        })
-        .join('');
-    } else {
-      rows =
-        `<div class="hist-row" data-open="${rideId}"><span>${String(p.date).slice(5, 16)}</span>` +
-        `<b>${Number(p.distanceKm).toFixed(1)} km</b>` +
-        `<span>${Number(p.avgSpeedKmh).toFixed(1)} km/h</span></div>`;
-    }
+    // 猫径归属：点击处线路属于猫径时，头部显示猫径、行内标最佳
+    const clusterOf = (id: number) => cls.find((c) => c.rideIds.includes(id));
+    const pawCluster = clusterOf(Number(sorted[0].rideId));
+    const rows = sorted
+      .map((prop) => ({ prop, id: Number(prop.rideId) }))
+      .map(({ prop, id }) => {
+        const cluster = clusterOf(id);
+        const best = cluster ? cluster.bestRideId === id : false;
+        return (
+          `<div class="hist-row${best ? ' best' : ''}" data-open="${id}">` +
+          `<span>${String(prop.date).slice(5, 16)}</span>` +
+          `<b>${Number(prop.distanceKm).toFixed(1)} km</b>` +
+          `<span>${Number(prop.avgSpeedKmh).toFixed(1)} km/h</span>` +
+          `${best ? '<i>🏆</i>' : ''}</div>`
+        );
+      })
+      .join('');
 
-    const head = cluster
-      ? `🐾 猫径 · 骑过 <b>${cluster.count}</b> 次`
-      : `🐾 ${p.title}`;
+    const head =
+      pawCluster && sorted.length === pawCluster.count
+        ? `🐾 猫径 · 骑过 ${pawCluster.count} 次`
+        : `🐾 足迹 · ${sorted.length} 条记录`;
 
     popupRef.current?.remove();
-    const popup = new maplibregl.Popup({ closeButton: false, maxWidth: '290px' })
+    const popup = new maplibregl.Popup({ closeButton: false, maxWidth: '300px' })
       .setLngLat(lngLat)
       .setHTML(
         `<div class="hist-card"><div class="hist-head">${head}</div>${rows}` +
@@ -369,127 +367,11 @@ export default function RideMap({
       el.addEventListener('click', () => openDetail(Number((el as HTMLElement).dataset.open)));
     });
     popupRef.current = popup;
+
+    function propOf(id: number) {
+      return tracksRef.current?.features.find((f) => f.properties.rideId === id)?.properties;
+    }
   }
-
-  // 定位面板聚焦 → 飞到对应骑行的范围
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !tracks || !focusRideIds?.length) return;
-    const fs = tracks.features.filter((f) => focusRideIds.includes(f.properties.rideId));
-    if (fs.length > 0) flyToBounds(map, fs);
-  }, [focusRideIds, tracks]);
-
-  // 骑行回放：RAF 命令式驱动（60fps 光点 + line-gradient 已骑高亮），进度写入 store 供图表指针订阅
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !tracks) return;
-    let raf = 0;
-
-    const begin = () => {
-      if (replayRideId == null) {
-        replayStore.stop();
-        markerRef.current?.remove();
-        markerRef.current = null;
-        if (map.getLayer('replay-line')) {
-          (map.getSource('replay-line') as maplibregl.GeoJSONSource)?.setData({
-            type: 'FeatureCollection',
-            features: [],
-          });
-        }
-        return;
-      }
-      const f = tracks.features.find((x) => x.properties.rideId === replayRideId);
-      if (!f || f.geometry.coordinates.length < 2) return;
-      const C = trailPalette(handlers.current.theme);
-      const coords = f.geometry.coordinates;
-
-      if (!markerRef.current) {
-        const el = document.createElement('div');
-        el.className = 'replay-dot';
-        markerRef.current = new maplibregl.Marker({ element: el }).setLngLat(coords[0]).addTo(map);
-        if (!map.getSource('replay-line')) {
-          // lineMetrics 让 line-progress 沿实际里程分布，配合 line-gradient 实现"画到哪亮到哪"
-          map.addSource('replay-line', {
-            type: 'geojson',
-            data: { type: 'FeatureCollection', features: [] },
-            lineMetrics: true,
-          });
-          map.addLayer({
-            id: 'replay-glow',
-            type: 'line',
-            source: 'replay-line',
-            layout: { 'line-cap': 'round' },
-            paint: {
-              'line-width': 13,
-              'line-blur': 5,
-              'line-opacity': 0.5,
-              'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.85, C.track, 1, C.hi],
-            },
-          });
-          map.addLayer({
-            id: 'replay-line',
-            type: 'line',
-            source: 'replay-line',
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
-            paint: {
-              'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 14, 4.5],
-              'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.9, C.track, 1, C.hi],
-            },
-          });
-        }
-      }
-
-      ensureReplayLayers(map, handlers.current.theme);
-      const main = ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.9, C.track, 1, C.hi];
-      const glow = ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.85, C.track, 1, C.hi];
-      map.setPaintProperty('replay-line', 'line-gradient', main);
-      map.setPaintProperty('replay-glow', 'line-gradient', glow);
-      replayStore.start(replayRideId);
-      const DUR = 20000;
-      const start = performance.now();
-      const tick = (now: number) => {
-        // 换肤/销毁期间图层可能暂时不存在，跳过这一帧即可
-        if (!markerRef.current) return;
-        const replaySrc = ensureReplayLayers(map, handlers.current.theme); // 图层丢失时自愈
-        if (!replaySrc) return;
-        try {
-          const p = Math.min(1, (now - start) / DUR);
-          const idx = Math.min(coords.length - 1, Math.floor(p * (coords.length - 1)));
-          markerRef.current.setLngLat(coords[idx]);
-          // 渐进绘制：走到哪，路线就画到哪（① 写入已骑坐标 ② 渐变上主题色）
-          replaySrc.setData({
-            type: 'FeatureCollection',
-            features: [
-              {
-                type: 'Feature',
-                properties: {},
-                geometry: { type: 'LineString', coordinates: coords.slice(0, idx + 1) },
-              },
-            ],
-          });
-          replayStore.update(replayRideId, p);
-          if (p < 1) {
-            raf = requestAnimationFrame(tick);
-          } else {
-            setTimeout(() => {
-              replayStore.stop();
-              handlers.current.onReplayEnd();
-            }, 1200);
-          }
-        } catch {
-          // 底图换肤瞬间可能抛错，跳过一帧
-        }
-      };
-      raf = requestAnimationFrame(tick);
-    };
-
-    // 样式未就绪时（慢网络）轮询等待，避免 "Style is not done loading" 异常
-    waitStyleReady(map, begin);
-
-    return () => {
-      cancelAnimationFrame(raf);
-    };
-  }, [replayRideId, tracks]);
 
   return <div ref={containerRef} className="map-canvas" style={{ position: 'absolute', inset: 0 }} />;
 }
