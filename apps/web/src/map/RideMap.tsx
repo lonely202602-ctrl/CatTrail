@@ -398,8 +398,8 @@ export default function RideMap({
             paint: {
               'line-width': 13,
               'line-blur': 5,
-              'line-opacity': 0.55,
-              'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, 'rgba(0,0,0,0)', 1, 'rgba(0,0,0,0)'],
+              'line-opacity': 0.5,
+              'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.85, C.track, 1, C.hi],
             },
           });
           map.addLayer({
@@ -409,7 +409,7 @@ export default function RideMap({
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
               'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 14, 4.5],
-              'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, 'rgba(0,0,0,0)', 1, 'rgba(0,0,0,0)'],
+              'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.9, C.track, 1, C.hi],
             },
           });
         }
@@ -438,12 +438,6 @@ export default function RideMap({
               },
             ],
           });
-          const C = trailPalette(handlers.current.theme);
-          const edge = Math.max(0.001, p);
-          const fade = Math.min(1, p + 0.002);
-          const stops = ['interpolate', ['linear'], ['line-progress'], 0, C.track, edge, C.track, fade, 'rgba(0,0,0,0)', 1, 'rgba(0,0,0,0)'];
-          map.setPaintProperty('replay-line', 'line-gradient', stops);
-          map.setPaintProperty('replay-glow', 'line-gradient', stops);
           replayStore.update(replayRideId, p);
           if (p < 1) {
             raf = requestAnimationFrame(tick);
@@ -479,7 +473,7 @@ function waitStyleReady(map: maplibregl.Map, fn: () => void) {
   const iv = setInterval(() => {
     tries++;
     if (map.isStyleLoaded() || map.loaded()) { clearInterval(iv); fn(); }
-    else if (tries > 100) clearInterval(iv);
+    else if (tries > 600) clearInterval(iv);
   }, 300);
 }
 
