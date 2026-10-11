@@ -37,10 +37,11 @@ export default function App() {
     const root = document.documentElement;
     if (root.classList.contains('theme-fading')) return;
     root.classList.add('theme-fading');
+    // 淡出 260ms → 换肤（底图重建在淡出掩护下进行）→ 停留一拍 → 淡入
     setTimeout(() => {
       setTheme((t) => (t === 'night' ? 'day' : 'night'));
-      setTimeout(() => root.classList.remove('theme-fading'), 420);
-    }, 200);
+      setTimeout(() => root.classList.remove('theme-fading'), 480);
+    }, 260);
   };
 
   useEffect(() => {

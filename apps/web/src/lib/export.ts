@@ -48,8 +48,30 @@ export function exportGpx(ride: RideInfo, track: [number, number][], series?: Ri
   triggerDownload(new Blob([gpx], { type: 'application/gpx+xml' }), `CatTrail_${ride.date.slice(0, 10)}_${ride.rideId}.gpx`);
 }
 
-/** 导出分享卡片 PNG（1200×675，夜巡品牌风格） */
-export function exportShareCard(ride: RideInfo, track: [number, number][], theme: 'night' | 'day') {
+/** 加载品牌 logo（缓存） */
+let logoCache: HTMLImageElement | null = null;
+async function loadLogo(): Promise<HTMLImageElement | null> {
+  if (logoCache && logoCache.complete && logoCache.naturalWidth > 0) return logoCache;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => { logoCache = img; resolve(img); };
+    img.onerror = () => resolve(null);
+    img.src = '/brand/logo-icon.png';
+  });
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/** 导出分享卡片 PNG（1200×675，夜巡品牌风格 + 正式 logo 徽章） */
+export async function exportShareCard(ride: RideInfo, track: [number, number][], theme: 'night' | 'day') {
   const W = 1200;
   const H = 675;
   const canvas = document.createElement('canvas');
@@ -68,7 +90,6 @@ export function exportShareCard(ride: RideInfo, track: [number, number][], theme
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  // 轨迹投影
   const lats = track.map((c) => c[1]);
   const lngs = track.map((c) => c[0]);
   const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
@@ -82,7 +103,6 @@ export function exportShareCard(ride: RideInfo, track: [number, number][], theme
   const px = (c: [number, number]) => ox + (c[0] - minLng) * scale;
   const py = (c: [number, number]) => oy + (maxLat - c[1]) * scale;
 
-  // 轨迹（光晕 + 主线 + 高光）
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const drawTrack = (width: number, color: string, blur: number) => {
@@ -105,11 +125,18 @@ export function exportShareCard(ride: RideInfo, track: [number, number][], theme
   ctx.fillStyle = '#ffffff';
   ctx.fill();
 
-  // 文案
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = trackColor;
+  // 品牌：正式 logo 徽章 + 字标
+  const logo = await loadLogo();
+  const badge = (x: number, y: number, size: number) => {
+    ctx.fillStyle = night ? '#f4f1e8' : '#ffffff';
+    roundRect(ctx, x, y, size, size, size * 0.22);
+    ctx.fill();
+    if (logo) ctx.drawImage(logo, x + size * 0.1, y + size * 0.1, size * 0.8, size * 0.8);
+  };
+  badge(60, 44, 56);
+  ctx.fillStyle = ink1;
   ctx.font = '700 30px "PingFang SC", "Microsoft YaHei", sans-serif';
-  ctx.fillText('🐈‍⬛ 猫踪 CatTrail', 60, 52);
+  ctx.fillText('猫踪 CatTrail', 130, 82);
 
   ctx.fillStyle = ink1;
   ctx.font = '700 52px "PingFang SC", "Microsoft YaHei", sans-serif';
@@ -145,7 +172,10 @@ export function exportShareCard(ride: RideInfo, track: [number, number][], theme
   ctx.stroke();
   ctx.fillStyle = dim;
   ctx.font = '18px "PingFang SC", "Microsoft YaHei", sans-serif';
-  ctx.fillText('🐈‍⬛ 猫踪 CatTrail · ride the night, leave the trace', 60, H - 28);
+  ctx.fillText('ride the night, leave the trace', 60, H - 28);
+  if (logo) {
+    ctx.drawImage(logo, W - 60 - 30, H - 30 - 24, 30, 24);
+  }
 
   canvas.toBlob((blob) => {
     if (blob) triggerDownload(blob, `CatTrail_${ride.date.slice(0, 10)}_${ride.rideId}.png`);

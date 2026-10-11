@@ -26,6 +26,8 @@ interface Props {
   onOpenDetail: (rideId: number) => void;
 }
 
+let opacityAnimSeq = 0;
+
 export default function RideMap({
   tracks, clusters, theme, selectedId, selectedClusterId, focusRideIds, replayRideId, onReplayEnd, focusRideId, focusIsReplay, onSelect, onSelectCluster, onOpenDetail,
 }: Props) {
@@ -252,6 +254,30 @@ export default function RideMap({
   }
 
   /** 聚焦模式：查看/回放某条线路时，其余线路大幅淡化；猫径高亮让位于聚焦主体 */
+  /** 线路透明度平滑动画（RAF 插值，进入/退出聚焦都有过渡） */
+  function animateTrackOpacity(map: maplibregl.Map, scale: number, dur: number) {
+    const my = ++opacityAnimSeq;
+    const bases: Array<[string, number]> = [['track-glow', 0.28], ['track-halo', 0.5], ['track-draw', 0.98]];
+    const froms = bases.map(([layer, base]) => {
+      let from = base;
+      try { from = (map.getPaintProperty(layer, 'line-opacity') as number) ?? base; } catch { /* 样式未就绪 */ }
+      return { layer, from, base };
+    });
+    const start = performance.now();
+    const tick = (now: number) => {
+      if (my !== opacityAnimSeq) return;
+      const p = Math.min(1, (now - start) / dur);
+      const e = 1 - Math.pow(1 - p, 2);
+      for (const { layer, from, base } of froms) {
+        if (!map.getLayer(layer)) continue;
+        map.setPaintProperty(layer, 'line-opacity', from + (base * scale - from) * e);
+      }
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  /** 聚焦模式：查看/回放某条线路时，其余线路大幅淡化；查看中线路保持本体色 */
   function applyFocusDim(
     map: maplibregl.Map,
     focusRideId: number | null,
@@ -259,28 +285,19 @@ export default function RideMap({
     selectedClusterId: string | null,
     cls: RouteCluster[],
   ) {
-    const C = trailPalette(handlers.current.theme);
     const dim = focusRideId != null;
-    (window as unknown as Record<string, unknown>).__dimDebug = { focusRideId, focusIsReplay, dim };
-    const bases: Array<[string, number]> = [['track-glow', 0.28], ['track-halo', 0.5], ['track-draw', 0.98]];
-    for (const [layer, base] of bases) {
-      if (!map.getLayer(layer)) continue;
-      if (dim) {
-        map.setFilter(layer, ['!=', ['get', 'rideId'], focusRideId]);
-        map.setPaintProperty(layer, 'line-opacity', base * 0.13);
+    // 猫径高亮：仅猫径筛选时使用；聚焦查看中线路保持本体色（不再叠加深色高亮）
+    if (map.getLayer('cluster-hi')) {
+      if (dim && focusIsReplay) {
+        map.setFilter('cluster-hi', ['==', ['get', 'rideId'], -1]);
+      } else if (dim) {
+        map.setFilter('cluster-hi', ['==', ['get', 'rideId'], focusRideId]);
       } else {
-        map.setFilter(layer, null);
-        map.setPaintProperty(layer, 'line-opacity', base);
+        applyClusterFilter(map, selectedClusterId, cls);
       }
     }
-    if (dim && focusIsReplay) {
-      // 回放中主体由 replay-line 渐进绘制，猫径高亮让位
-      map.setFilter('cluster-hi', ['==', ['get', 'rideId'], -1]);
-    } else if (dim) {
-      map.setFilter('cluster-hi', ['==', ['get', 'rideId'], focusRideId]);
-    } else {
-      applyClusterFilter(map, selectedClusterId, cls);
-    }
+    // 其余线路透明度平滑过渡（进入详情减到 8%，退出动画恢复）
+    animateTrackOpacity(map, dim ? 0.08 : 1, 460);
   }
 
   function applyClusterFilter(map: maplibregl.Map, clusterId: string | number | null, cls: RouteCluster[]) {

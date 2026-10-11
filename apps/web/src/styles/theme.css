@@ -410,11 +410,11 @@ body {
 .map-canvas.map-fading { opacity: 0.15; }
 
 /* 主题切换：UI 整体淡出→换肤→淡入（opacity 走合成器，无重绘卡顿） */
-.panel, .theme-toggle, .drawer, .loading { transition: opacity 0.22s ease; }
+.panel, .theme-toggle, .drawer, .loading { transition: opacity 0.26s ease; }
 .theme-fading .panel,
 .theme-fading .theme-toggle,
 .theme-fading .drawer,
-.theme-fading .loading { opacity: 0; pointer-events: none; }
+.theme-fading .loading { opacity: 0.08; pointer-events: none; }
 
 /* 抽屉操作按钮 */
 .drawer__actions {
