@@ -29,3 +29,4 @@ coros-mcp-test/
 # 数据库与运行缓存
 *.db
 .cache/
+scripts/depth-map.txt
