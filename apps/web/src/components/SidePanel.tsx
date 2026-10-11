@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import type { RideInfo, RouteCluster } from '@lonelycat/shared';
 
 interface Props {
@@ -14,14 +15,28 @@ interface Props {
 export default function SidePanel({
   rides, clusters, totalKm, totalAscentM, selectedId, selectedClusterId, onSelect, onSelectCluster,
 }: Props) {
+  const ridesRef = useRef<HTMLDivElement>(null);
+  const scrollTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  // 滚动时滚动条淡入，停止 900ms 后淡出
+  const onRidesScroll = () => {
+    const el = ridesRef.current;
+    if (!el) return;
+    el.classList.add('is-scrolling');
+    clearTimeout(scrollTimer.current);
+    scrollTimer.current = setTimeout(() => el.classList.remove('is-scrolling'), 900);
+  };
+
   return (
     <aside className="panel">
       <div className="panel__brand">
-        <h1>
-          <span className="cat">🐈‍⬛</span> 猫踪
-          <span className="en">CAT TRAIL</span>
-        </h1>
-        <div className="sub">你的每一次骑行，都是这座城市里猫的踪迹</div>
+        <img className="brand-logo" src="/brand/logo-icon.png" alt="CatTrail" />
+        <div>
+          <h1>
+            猫踪<span className="en">CAT TRAIL</span>
+          </h1>
+          <div className="sub">你的每一次骑行，都是这座城市里猫的踪迹</div>
+        </div>
       </div>
 
       <div className="stats">
@@ -61,7 +76,7 @@ export default function SidePanel({
         </div>
       )}
 
-      <div className="rides">
+      <div className="rides rides-capped" ref={ridesRef} onScroll={onRidesScroll}>
         <div className="rides__title">足 迹 巡 回</div>
         {rides.map((r) => (
           <div

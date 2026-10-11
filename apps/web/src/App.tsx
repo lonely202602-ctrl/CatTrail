@@ -25,8 +25,13 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    const root = document.documentElement;
+    // 切换期间统一加色彩过渡，避免生硬跳变
+    root.classList.add('theme-switching');
+    root.dataset.theme = theme;
     localStorage.setItem('cattrail-theme', theme);
+    const t = setTimeout(() => root.classList.remove('theme-switching'), 650);
+    return () => clearTimeout(t);
   }, [theme]);
 
   useEffect(() => {

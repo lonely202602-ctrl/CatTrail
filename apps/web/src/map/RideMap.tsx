@@ -71,14 +71,17 @@ export default function RideMap({
     if (map && tracks && map.isStyleLoaded()) mountTracks(map, tracks);
   }, [tracks]);
 
-  // 主题切换 → 重建底图样式并重挂轨迹（换肤时路线重新“骑”一遍）
+  // 主题切换 → 底图淡出 → 重建样式并重挂轨迹 → 淡入（换肤时路线重新“骑”一遍）
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.loaded()) return;
+    const el = containerRef.current;
+    if (!map || !el || !map.loaded()) return;
+    el.classList.add('map-fading');
     map.setStyle(buildStyle(theme), { diff: false });
     map.once('style.load', () => {
       if (tracksRef.current) mountTracks(map, tracksRef.current);
       applyClusterFilter(map, selectedClusterRef.current, clustersRef.current);
+      setTimeout(() => el.classList.remove('map-fading'), 300);
     });
   }, [theme]);
 
@@ -291,7 +294,7 @@ export default function RideMap({
     popupRef.current = popup;
   }
 
-  return <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />;
+  return <div ref={containerRef} className="map-canvas" style={{ position: 'absolute', inset: 0 }} />;
 }
 
 function flyToBounds(map: maplibregl.Map, features: TrackFC['features'][]) {

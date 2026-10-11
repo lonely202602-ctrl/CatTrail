@@ -5,7 +5,7 @@
 :root {
   /* 底色 */
   --bg-0: #0a0e17;
-  --bg-1: rgba(14, 19, 32, 0.82);
+  --bg-1: rgba(10, 14, 23, 0.5);
   --bg-2: rgba(24, 31, 48, 0.65);
   --line: rgba(126, 141, 173, 0.16);
 
@@ -56,6 +56,9 @@ body {
 .panel__brand {
   padding: 18px 20px 14px;
   border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .panel__brand h1 {
   margin: 0;
@@ -100,6 +103,17 @@ body {
 
 /* 骑行列表 */
 .rides { overflow-y: auto; padding: 8px; flex: 1; }
+.rides.rides-capped { max-height: 212px; }
+.rides::-webkit-scrollbar { width: 6px; }
+.rides::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+  transition: background 0.35s ease;
+}
+.rides:hover::-webkit-scrollbar-thumb,
+.rides.is-scrolling::-webkit-scrollbar-thumb { background: rgba(126, 141, 173, 0.45); }
+:root[data-theme='day'] .rides:hover::-webkit-scrollbar-thumb,
+:root[data-theme='day'] .rides.is-scrolling::-webkit-scrollbar-thumb { background: rgba(90, 100, 114, 0.35); }
 .rides__title {
   font-size: 10px;
   letter-spacing: 2px;
@@ -148,9 +162,6 @@ body {
 .panel__foot .mode { color: var(--cat-eye); }
 
 /* 滚动条 */
-.rides::-webkit-scrollbar { width: 6px; }
-.rides::-webkit-scrollbar-thumb { background: #2a3548; border-radius: 3px; }
-.rides::-webkit-scrollbar-thumb:hover { background: #3a4a66; }
 
 /* 地图上的弹窗 */
 .maplibregl-popup-content {
@@ -208,7 +219,7 @@ body {
    ============================================ */
 :root[data-theme='day'] {
   --bg-0: #f4f1e8;
-  --bg-1: rgba(255, 253, 248, 0.9);
+  --bg-1: rgba(255, 253, 248, 0.58);
   --bg-2: rgba(20, 25, 35, 0.06);
   --line: rgba(30, 35, 45, 0.13);
   --ink-1: #1d2430;
@@ -221,6 +232,7 @@ body {
 }
 
 :root[data-theme='day'] .panel { box-shadow: 0 12px 40px rgba(30, 30, 20, 0.12); }
+:root[data-theme='day'] .drawer { background: rgba(255, 253, 248, 0.85); }
 
 /* ============================================
    主题切换按钮
@@ -287,7 +299,7 @@ body {
   height: 100%;
   width: min(460px, 94vw);
   z-index: 30;
-  background: var(--bg-1);
+  background: rgba(10, 14, 23, 0.8);
   backdrop-filter: blur(16px) saturate(1.2);
   border-left: 1px solid var(--line);
   box-shadow: -20px 0 60px rgba(0, 0, 0, 0.3);
@@ -389,3 +401,21 @@ body {
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
+
+/* 品牌图标 */
+.brand-logo { width: 36px; height: 36px; flex: none; }
+
+/* 主题切换过渡（切主题期间给全部受控元素加色彩过渡） */
+.theme-switching .panel,
+.theme-switching .panel *,
+.theme-switching .drawer,
+.theme-switching .drawer *,
+.theme-switching .theme-toggle,
+.theme-switching .loading {
+  transition: background-color 0.5s ease, color 0.5s ease,
+    border-color 0.5s ease, box-shadow 0.5s ease, outline-color 0.5s ease !important;
+}
+
+/* 底图换肤淡出遮罩 */
+.map-canvas { transition: opacity 0.32s ease; }
+.map-canvas.map-fading { opacity: 0.15; }
