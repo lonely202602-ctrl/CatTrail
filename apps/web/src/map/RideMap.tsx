@@ -94,6 +94,15 @@ export default function RideMap({
     });
   }, [theme]);
 
+
+  // 聚焦模式：查看/回放某条线路时，其余线路大幅淡化
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => applyFocusDim(map, focusRideId, focusIsReplay, selectedClusterId, clustersRef.current);
+    waitStyleReady(map, apply);
+  }, [focusRideId, focusIsReplay, theme, tracks, selectedClusterId, clusters]);
+
   // 选中骑行 → 平滑飞行
   useEffect(() => {
     const map = mapRef.current;
@@ -411,7 +420,9 @@ export default function RideMap({
       const start = performance.now();
       const tick = (now: number) => {
         // 换肤/销毁期间图层可能暂时不存在，跳过这一帧即可
-        if (!map.getSource('replay-line') || !markerRef.current) return;
+        if (!markerRef.current) return;
+        const replaySrc = ensureReplayLayers(map); // 图层丢失（换肤/样式重建）时自愈
+        if (!replaySrc) return;
         try {
           const p = Math.min(1, (now - start) / DUR);
           const idx = Math.min(coords.length - 1, Math.floor(p * (coords.length - 1)));
@@ -435,9 +446,8 @@ export default function RideMap({
       raf = requestAnimationFrame(tick);
     };
 
-    // 样式未就绪时（慢网络）等 load 再启动，避免 "Style is not done loading" 异常
-    if (map.isStyleLoaded()) begin();
-    else map.once('load', begin);
+    // 样式未就绪时（慢网络）轮询等待，避免 "Style is not done loading" 异常
+    waitStyleReady(map, begin);
 
     return () => {
       cancelAnimationFrame(raf);
@@ -445,6 +455,56 @@ export default function RideMap({
   }, [replayRideId, tracks]);
 
   return <div ref={containerRef} className="map-canvas" style={{ position: 'absolute', inset: 0 }} />;
+}
+
+
+/** 等待样式就绪后执行（轮询式，避免 once('load') 在已加载后注册永不触发） */
+function waitStyleReady(map: maplibregl.Map, fn: () => void) {
+  if (map.isStyleLoaded()) { fn(); return; }
+  let tries = 0;
+  const iv = setInterval(() => {
+    tries++;
+    if (map.isStyleLoaded() || map.loaded()) { clearInterval(iv); fn(); }
+    else if (tries > 100) clearInterval(iv);
+  }, 300);
+}
+
+/** 回放图层自愈：换肤/样式重建导致图层丢失时自动重建（幂等） */
+function ensureReplayLayers(map: maplibregl.Map): maplibregl.GeoJSONSource | null {
+  if (!map.getSource('replay-line')) {
+    map.addSource('replay-line', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+      lineMetrics: true,
+    });
+  }
+  if (!map.getLayer('replay-glow')) {
+    map.addLayer({
+      id: 'replay-glow',
+      type: 'line',
+      source: 'replay-line',
+      layout: { 'line-cap': 'round' },
+      paint: {
+        'line-width': 13,
+        'line-blur': 5,
+        'line-opacity': 0.55,
+        'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, 'rgba(0,0,0,0)', 1, 'rgba(0,0,0,0)'],
+      },
+    });
+  }
+  if (!map.getLayer('replay-line')) {
+    map.addLayer({
+      id: 'replay-line',
+      type: 'line',
+      source: 'replay-line',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 14, 4.5],
+        'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, 'rgba(0,0,0,0)', 1, 'rgba(0,0,0,0)'],
+      },
+    });
+  }
+  return map.getSource('replay-line') as maplibregl.GeoJSONSource | null;
 }
 
 function flyToBounds(map: maplibregl.Map, features: TrackFC['features'][]) {
