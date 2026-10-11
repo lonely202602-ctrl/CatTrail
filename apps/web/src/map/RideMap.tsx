@@ -18,13 +18,16 @@ interface Props {
   /** 骑行回放的线路 id（null = 停止）；进度由内部 RAF 写入 replayStore */
   replayRideId: number | null;
   onReplayEnd: () => void;
+  /** 当前聚焦的线路（回放中或抽屉查看中）：其余线路淡化突出主体 */
+  focusRideId: number | null;
+  focusIsReplay: boolean;
   onSelect: (rideId: number) => void;
   onSelectCluster: (clusterId: string) => void;
   onOpenDetail: (rideId: number) => void;
 }
 
 export default function RideMap({
-  tracks, clusters, theme, selectedId, selectedClusterId, focusRideIds, replayRideId, onReplayEnd, onSelect, onSelectCluster, onOpenDetail,
+  tracks, clusters, theme, selectedId, selectedClusterId, focusRideIds, replayRideId, onReplayEnd, focusRideId, focusIsReplay, onSelect, onSelectCluster, onOpenDetail,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -87,7 +90,6 @@ export default function RideMap({
     map.setStyle(buildStyle(theme), { diff: false });
     map.once('style.load', () => {
       if (tracksRef.current) mountTracks(map, tracksRef.current);
-      applyClusterFilter(map, selectedClusterRef.current, clustersRef.current);
       setTimeout(() => el.classList.remove('map-fading'), 300);
     });
   }, [theme]);
@@ -106,7 +108,7 @@ export default function RideMap({
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
-      applyClusterFilter(map, selectedClusterId, clustersRef.current);
+      applyFocusDim(map, focusRideId, focusIsReplay, selectedClusterId, clustersRef.current);
       if (selectedClusterId != null) {
         const ids = clustersRef.current.find((c) => c.id === selectedClusterId)?.rideIds ?? [];
         const fs = tracksRef.current?.features.filter((f) => ids.includes(f.properties.rideId)) ?? [];
@@ -240,10 +242,46 @@ export default function RideMap({
     });
   }
 
-  function applyClusterFilter(map: maplibregl.Map, clusterId: string | null, cls: RouteCluster[]) {
+  /** 聚焦模式：查看/回放某条线路时，其余线路大幅淡化；猫径高亮让位于聚焦主体 */
+  function applyFocusDim(
+    map: maplibregl.Map,
+    focusRideId: number | null,
+    focusIsReplay: boolean,
+    selectedClusterId: string | null,
+    cls: RouteCluster[],
+  ) {
+    const C = trailPalette(handlers.current.theme);
+    const dim = focusRideId != null;
+    (window as unknown as Record<string, unknown>).__dimDebug = { focusRideId, focusIsReplay, dim };
+    const bases: Array<[string, number]> = [['track-glow', 0.28], ['track-halo', 0.5], ['track-draw', 0.98]];
+    for (const [layer, base] of bases) {
+      if (!map.getLayer(layer)) continue;
+      if (dim) {
+        map.setFilter(layer, ['!=', ['get', 'rideId'], focusRideId]);
+        map.setPaintProperty(layer, 'line-opacity', base * 0.13);
+      } else {
+        map.setFilter(layer, null);
+        map.setPaintProperty(layer, 'line-opacity', base);
+      }
+    }
+    if (dim && focusIsReplay) {
+      // 回放中主体由 replay-line 渐进绘制，猫径高亮让位
+      map.setFilter('cluster-hi', ['==', ['get', 'rideId'], -1]);
+    } else if (dim) {
+      map.setFilter('cluster-hi', ['==', ['get', 'rideId'], focusRideId]);
+    } else {
+      applyClusterFilter(map, selectedClusterId, cls);
+    }
+  }
+
+  function applyClusterFilter(map: maplibregl.Map, clusterId: string | number | null, cls: RouteCluster[]) {
     const src = map.getSource('tracks') as maplibregl.GeoJSONSource | undefined;
     if (!src || !map.getLayer('cluster-hi')) return;
-    const ids = cls.find((c) => c.id === clusterId)?.rideIds ?? [];
+    if (clusterId == null) {
+      map.setFilter('cluster-hi', ['==', ['get', 'rideId'], -1]);
+      return;
+    }
+    const ids = cls.find((c) => c.id === clusterId || c.rideIds.includes(Number(clusterId)))?.rideIds ?? [];
     map.setFilter('cluster-hi', ['in', ['get', 'rideId'], ['literal', ids]]);
   }
 
@@ -337,18 +375,33 @@ export default function RideMap({
         el.className = 'replay-dot';
         markerRef.current = new maplibregl.Marker({ element: el }).setLngLat(coords[0]).addTo(map);
         if (!map.getSource('replay-line')) {
-          // lineMetrics 让 line-progress 沿实际里程分布，配合 line-gradient 实现“已骑高亮”
+          // lineMetrics 让 line-progress 沿实际里程分布，配合 line-gradient 实现"画到哪亮到哪"
           map.addSource('replay-line', {
             type: 'geojson',
             data: { type: 'FeatureCollection', features: [] },
             lineMetrics: true,
           });
           map.addLayer({
-            id: 'replay-line',
+            id: 'replay-glow',
             type: 'line',
             source: 'replay-line',
             layout: { 'line-cap': 'round' },
-            paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, 'rgba(0,0,0,0)', 1, 'rgba(0,0,0,0)'] },
+            paint: {
+              'line-width': 13,
+              'line-blur': 5,
+              'line-opacity': 0.55,
+              'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, 'rgba(0,0,0,0)', 1, 'rgba(0,0,0,0)'],
+            },
+          });
+          map.addLayer({
+            id: 'replay-line',
+            type: 'line',
+            source: 'replay-line',
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: {
+              'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 14, 4.5],
+              'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, 'rgba(0,0,0,0)', 1, 'rgba(0,0,0,0)'],
+            },
           });
         }
       }

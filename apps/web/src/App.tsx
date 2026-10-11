@@ -99,6 +99,8 @@ export default function App() {
         focusRideIds={focusRideIds}
         replayRideId={replayRide}
         onReplayEnd={() => setReplayRide(null)}
+        focusRideId={replayRide ?? detailId}
+        focusIsReplay={replayRide != null}
         onSelect={(id) => {
           setSelectedId(id);
           setSelectedClusterId(null);
