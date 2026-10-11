@@ -8,7 +8,9 @@ interface Props {
   series: RideSeriesPoint[];
   theme: 'night' | 'day';
   track: [number, number][];
-  onReplay: () => void;
+  /** 回放状态（非 null 且 rideId 匹配时，图表指针与地图光点同步） */
+  replay: { rideId: number; progress: number } | null;
+  onToggleReplay: () => void;
   onClose: () => void;
 }
 
@@ -24,8 +26,9 @@ const CHART_COLORS = {
   day: { speed: ['#ff9a63', '#e8551f'], alt: ['#5fc4ae', '#2f9e8f'], hr: ['#f08a8a', '#d6455f'], axis: '#98a0af' },
 } as const;
 
-export default function ActivityDrawer({ ride, series, theme, track, onReplay, onClose }: Props) {
+export default function ActivityDrawer({ ride, series, theme, track, replay, onToggleReplay, onClose }: Props) {
   const colors = CHART_COLORS[theme];
+  const replaying = replay?.rideId === ride.rideId;
   const tMax = series.length > 0 ? series[series.length - 1].t : 0;
 
   const speedData = useMemo(() => series.filter((p) => p.s != null).map((p) => ({ x: p.t, y: p.s! })), [series]);
@@ -54,21 +57,23 @@ export default function ActivityDrawer({ ride, series, theme, track, onReplay, o
       <div className="drawer__actions">
         <button onClick={() => exportGpx(ride, track, series)}>⬇ 导出 GPX</button>
         <button onClick={() => exportShareCard(ride, track, theme)}>🖼 分享卡片</button>
-        <button onClick={onReplay}>▶ 骑行回放</button>
+        <button onClick={onToggleReplay} className={replaying ? 'active' : ''}>
+          {replaying ? '⏹ 停止回放' : '▶ 骑行回放'}
+        </button>
       </div>
 
       <div className="drawer__charts">
         {speedData.length > 1 && (
           <AreaChart data={speedData} tMax={tMax} colors={colors.speed} axis={colors.axis}
-            title="速度" unit="km/h" height={120} />
+            title="速度" unit="km/h" height={120} pin={replaying ? replay!.progress : null} />
         )}
         {altData.length > 1 && (
           <AreaChart data={altData} tMax={tMax} colors={colors.alt} axis={colors.axis}
-            title="海拔" unit="m" height={100} />
+            title="海拔" unit="m" height={100} pin={replaying ? replay!.progress : null} />
         )}
         {hrData.length > 1 && (
           <AreaChart data={hrData} tMax={tMax} colors={colors.hr} axis={colors.axis}
-            title="心率" unit="bpm" height={100} />
+            title="心率" unit="bpm" height={100} pin={replaying ? replay!.progress : null} />
         )}
       </div>
 
@@ -77,9 +82,9 @@ export default function ActivityDrawer({ ride, series, theme, track, onReplay, o
   );
 }
 
-/** 手写 SVG 面积图：渐变填充 + 悬停十字线与数值气泡 */
+/** 手写 SVG 面积图：渐变填充 + 悬停十字线与数值气泡 + 回放指针 */
 function AreaChart({
-  data, tMax, colors, axis, title, unit, height,
+  data, tMax, colors, axis, title, unit, height, pin,
 }: {
   data: { x: number; y: number }[];
   tMax: number;
@@ -88,6 +93,7 @@ function AreaChart({
   title: string;
   unit: string;
   height: number;
+  pin?: number | null;
 }) {
   const [hover, setHover] = useState<{ i: number; px: number } | null>(null);
   const W = 400;
@@ -125,6 +131,14 @@ function AreaChart({
 
   const hp = hover ? data[hover.i] : null;
 
+  // 回放指针：按时间轴精确定位（与地图光点共用同一 progress）
+  const pinData = (() => {
+    if (pin == null || data.length === 0) return null;
+    const t = pin * tMax;
+    let idx = Math.max(0, Math.min(data.length - 1, Math.round((t / (tMax || 1)) * (data.length - 1))));
+    return { idx, d: data[idx], xRatio: X(data[idx].x) / W, yRatio: Y(data[idx].y) / H };
+  })();
+
   return (
     <div className="chart">
       <div className="chart__head">
@@ -146,7 +160,20 @@ function AreaChart({
             <line x1={X(data[hover.i].x)} y1="0" x2={X(data[hover.i].x)} y2={H - PAD_B}
               stroke={axis} strokeWidth="1" vectorEffect="non-scaling-stroke" strokeDasharray="3 3" />
           )}
+          {pinData && (
+            <line x1={X(pinData.d.x)} y1="0" x2={X(pinData.d.x)} y2={H - PAD_B}
+              stroke={colors[1]} strokeWidth="1.4" vectorEffect="non-scaling-stroke" />
+          )}
         </svg>
+        {pinData && (
+          <>
+            <div className="chart__pin-dot" style={{ left: `${pinData.xRatio * 100}%`, top: `${pinData.yRatio * 100}%` }} />
+            <div className="chart__pin-tip"
+              style={{ left: `${pinData.xRatio * 100}%`, transform: pinData.xRatio > 0.75 ? 'translateX(-100%)' : 'none' }}>
+              <b>{pinData.d.y.toFixed(1)}</b> {unit} · <span>{fmtDuration(pinData.d.x)}</span>
+            </div>
+          </>
+        )}
         {hp && (
           <div className="chart__tip"
             style={{ left: `${hover!.px * 100}%`, transform: hover!.px > 0.8 ? 'translateX(-100%)' : 'none' }}>

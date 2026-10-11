@@ -14,16 +14,15 @@ interface Props {
   selectedClusterId: string | null;
   /** 定位面板聚焦的骑行集合（飞过去） */
   focusRideIds: number[] | null;
-  /** 骑行回放（非 null 时在地图上动画） */
-  replayRideId: number | null;
-  onReplayEnd: () => void;
+  /** 骑行回放：{ 线路 id, 进度 0..1 }，抽屉与地图共享同一进度 */
+  replay: { rideId: number; progress: number } | null;
   onSelect: (rideId: number) => void;
   onSelectCluster: (clusterId: string) => void;
   onOpenDetail: (rideId: number) => void;
 }
 
 export default function RideMap({
-  tracks, clusters, theme, selectedId, selectedClusterId, focusRideIds, replayRideId, onReplayEnd, onSelect, onSelectCluster, onOpenDetail,
+  tracks, clusters, theme, selectedId, selectedClusterId, focusRideIds, replay, onSelect, onSelectCluster, onOpenDetail,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -31,8 +30,9 @@ export default function RideMap({
   const tracksRef = useRef<TrackFC | null>(null);
   const clustersRef = useRef<RouteCluster[]>(clusters);
   const selectedClusterRef = useRef<string | null>(selectedClusterId);
-  const handlers = useRef({ onSelect, onSelectCluster, onOpenDetail, theme, onReplayEnd });
-  handlers.current = { onSelect, onSelectCluster, onOpenDetail, theme, onReplayEnd };
+  const handlers = useRef({ onSelect, onSelectCluster, onOpenDetail, theme });
+  handlers.current = { onSelect, onSelectCluster, onOpenDetail, theme };
+  const markerRef = useRef<maplibregl.Marker | null>(null);
   tracksRef.current = tracks;
   clustersRef.current = clusters;
   selectedClusterRef.current = selectedClusterId;
@@ -307,70 +307,57 @@ export default function RideMap({
     if (fs.length > 0) flyToBounds(map, fs);
   }, [focusRideIds, tracks]);
 
-  // 骑行回放：光点沿轨迹匀速移动 + 已骑路径高亮
+  // 骑行回放：光点沿轨迹移动 + 已骑路径高亮（进度由 App 统一驱动，与图表指针同步）
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || replayRideId == null || !tracks) return;
-    const f = tracks.features.find((x) => x.properties.rideId === replayRideId);
+    if (!map || !tracks) return;
+    if (!replay) {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      if (map.getLayer('replay-line')) {
+        (map.getSource('replay-line') as maplibregl.GeoJSONSource)?.setData({
+          type: 'FeatureCollection',
+          features: [],
+        });
+      }
+      return;
+    }
+    const f = tracks.features.find((x) => x.properties.rideId === replay.rideId);
     if (!f || f.geometry.coordinates.length < 2) return;
     const coords = f.geometry.coordinates;
-    const DUR = 20000; // 整段压缩到 20 秒
 
-    const el = document.createElement('div');
-    el.className = 'replay-dot';
-    const marker = new maplibregl.Marker({ element: el }).setLngLat(coords[0]).addTo(map);
-
-    if (!map.getSource('replay-line')) {
-      map.addSource('replay-line', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      });
-      map.addLayer({
-        id: 'replay-line',
-        type: 'line',
-        source: 'replay-line',
-        layout: { 'line-cap': 'round' },
-        paint: { 'line-color': '#ffe9d6', 'line-width': 3.5, 'line-opacity': 0.95 },
-      });
+    if (!markerRef.current) {
+      const el = document.createElement('div');
+      el.className = 'replay-dot';
+      markerRef.current = new maplibregl.Marker({ element: el }).setLngLat(coords[0]).addTo(map);
+      if (!map.getSource('replay-line')) {
+        map.addSource('replay-line', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        map.addLayer({
+          id: 'replay-line',
+          type: 'line',
+          source: 'replay-line',
+          layout: { 'line-cap': 'round' },
+          paint: { 'line-color': '#ffe9d6', 'line-width': 3.5, 'line-opacity': 0.95 },
+        });
+      }
     }
-    const replaySrc = map.getSource('replay-line') as maplibregl.GeoJSONSource;
 
-    let stopped = false;
-    const start = performance.now();
-    const tick = () => {
-      if (stopped || !map.getSource('replay-line')) {
-        marker.remove();
-        return;
-      }
-      const p = Math.min(1, (performance.now() - start) / DUR);
-      const idx = Math.min(coords.length - 1, Math.floor(p * (coords.length - 1)));
-      marker.setLngLat(coords[idx]);
-      replaySrc.setData({
-        type: 'FeatureCollection',
-        features: [
-          {
-            type: 'Feature',
-            properties: {},
-            geometry: { type: 'LineString', coordinates: coords.slice(0, idx + 1) },
-          },
-        ],
-      });
-      if (p < 1) {
-        setTimeout(tick, 33);
-      } else {
-        setTimeout(() => {
-          marker.remove();
-          handlers.current.onReplayEnd();
-        }, 1200);
-      }
-    };
-    setTimeout(tick, 60);
-
-    return () => {
-      stopped = true;
-      marker.remove();
-    };
-  }, [replayRideId, tracks]);
+    const idx = Math.min(coords.length - 1, Math.floor(replay.progress * (coords.length - 1)));
+    markerRef.current?.setLngLat(coords[idx]);
+    (map.getSource('replay-line') as maplibregl.GeoJSONSource)?.setData({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: coords.slice(0, idx + 1) },
+        },
+      ],
+    });
+  }, [replay, tracks]);
 
   return <div ref={containerRef} className="map-canvas" style={{ position: 'absolute', inset: 0 }} />;
 }

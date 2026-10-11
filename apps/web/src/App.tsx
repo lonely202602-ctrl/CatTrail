@@ -19,7 +19,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
   const [focusRideIds, setFocusRideIds] = useState<number[] | null>(null);
-  const [replayRideId, setReplayRideId] = useState<number | null>(null);
+  /** 骑行回放：进度由这里统一驱动，地图光点与图表指针共享同一进度 */
+  const [replay, setReplay] = useState<{ rideId: number; progress: number } | null>(null);
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [seriesCache, setSeriesCache] = useState<Record<number, RideSeriesPoint[]>>({});
@@ -71,15 +72,40 @@ export default function App() {
     detailId != null ? tracks?.features.find((f) => f.properties.rideId === detailId)?.geometry.coordinates ?? null : null;
 
   const startReplay = (rideId: number) => {
-    setDetailId(null); // 关抽屉，把地图完整让给回放
-    setReplayRideId(rideId);
+    // 再次点击 = 停止；回放期间抽屉保持打开，图表指针与地图光点同步
+    setReplay((r) => (r && r.rideId === rideId ? null : { rideId, progress: 0 }));
   };
+
+  useEffect(() => {
+    if (!replay) return;
+    const rideId = replay.rideId;
+    const DUR = 20000;
+    const start = performance.now();
+    let stopped = false;
+    const tick = () => {
+      if (stopped) return;
+      const p = Math.min(1, (performance.now() - start) / DUR);
+      setReplay((r) => (r && r.rideId === rideId ? { rideId, progress: p } : r));
+      if (p < 1) setTimeout(tick, 50);
+      else setTimeout(() => setReplay((r) => (r && r.rideId === rideId ? null : r)), 1200);
+    };
+    const t = setTimeout(tick, 60);
+    return () => {
+      stopped = true;
+      clearTimeout(t);
+    };
+  }, [replay?.rideId]);
 
   const clearFocus = () => {
     setFocusRideIds(null);
     setSelectedId(null);
     setSelectedClusterId(null);
   };
+
+  // 调试/测试钩子（无副作用，方便浏览器控制台驱动）
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__cattrail = { openDetail, startReplay, focusRegion: setFocusRideIds };
+  });
 
   return (
     <>
@@ -90,8 +116,7 @@ export default function App() {
         selectedId={selectedId}
         selectedClusterId={selectedClusterId}
         focusRideIds={focusRideIds}
-        replayRideId={replayRideId}
-        onReplayEnd={() => setReplayRideId(null)}
+        replay={replay}
         onSelect={(id) => {
           setSelectedId(id);
           setSelectedClusterId(null);
@@ -139,7 +164,8 @@ export default function App() {
           series={seriesCache[detailId] ?? []}
           theme={theme}
           track={detailTrack ?? []}
-          onReplay={() => detailId != null && startReplay(detailId)}
+          replay={replay}
+          onToggleReplay={() => detailId != null && startReplay(detailId)}
           onClose={() => setDetailId(null)}
         />
       )}

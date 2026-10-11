@@ -72,25 +72,25 @@ export default function SidePanel({
         </div>
       </div>
 
-      <div className="rides regions">
+      <div className="regions">
         <div className="rides__title">定 位</div>
-        <div className="region-item" onClick={() => onFocusRegion(rides.map((r) => r.rideId))}>
-          <span className="paw">🐾</span>
+        <div className="region-card" onClick={() => onFocusRegion(rides.map((r) => r.rideId))}>
+          <span className="region-emoji">🐾</span>
           <div className="info">
             <div className="name">全国视野</div>
+            <div className="meta">所有巡游轨迹一图尽览</div>
           </div>
-          <span className="arrow">⤢</span>
+          <span className="count-pill">{rides.length}</span>
         </div>
         {regionGroups.map((g) =>
           g.cities.map((c) => (
-            <div key={`${g.prov}-${c.city}`} className="region-item" onClick={() => onFocusRegion(c.ids)}>
-              <span className="paw">📍</span>
+            <div key={`${g.prov}-${c.city}`} className="region-card" onClick={() => onFocusRegion(c.ids)}>
+              <span className="region-emoji">📍</span>
               <div className="info">
-                <div className="name">{g.prov} · {c.city}</div>
+                <div className="name">{g.prov}</div>
+                <div className="meta">{c.city}</div>
               </div>
-              <span className="count">
-                <b>{c.ids.length}</b> 次
-              </span>
+              <span className="count-pill">{c.ids.length}</span>
             </div>
           )),
         )}

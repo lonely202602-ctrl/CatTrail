@@ -1,8 +1,36 @@
 {
-  "generatedAt": "2026-10-11T07:26:50.227Z",
-  "totalKm": 141.2,
-  "totalAscentM": 240,
+  "generatedAt": "2026-10-11T07:42:35.489Z",
+  "totalKm": 204.32,
+  "totalAscentM": 359,
   "rides": [
+    {
+      "rideId": 990000002,
+      "title": "上海 · 浦江滨江线",
+      "date": "2026-10-08 07:05:00",
+      "distanceKm": 27.82,
+      "movingTimeSec": 360,
+      "ascentM": 66,
+      "avgSpeedKmh": 26,
+      "device": "DEMO",
+      "calorie": 584,
+      "maxSpeedKmh": 27.1,
+      "province": "上海市",
+      "city": "浦东新区"
+    },
+    {
+      "rideId": 990000001,
+      "title": "北京 · 长安街夜骑",
+      "date": "2026-10-03 19:32:00",
+      "distanceKm": 35.3,
+      "movingTimeSec": 420,
+      "ascentM": 53,
+      "avgSpeedKmh": 28,
+      "device": "DEMO",
+      "calorie": 741,
+      "maxSpeedKmh": 27.2,
+      "province": "北京市",
+      "city": "朝阳区"
+    },
     {
       "rideId": 56284695,
       "title": "户外骑行",

@@ -416,24 +416,6 @@ body {
 .theme-fading .drawer,
 .theme-fading .loading { opacity: 0; pointer-events: none; }
 
-/* 定位面板 */
-.region-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  margin: 2px 4px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background 0.18s ease, transform 0.18s ease;
-}
-.region-item:hover { background: var(--bg-2); transform: translateX(2px); }
-.region-item .paw { font-size: 14px; }
-.region-item .name { font-size: 12px; font-weight: 600; }
-.region-item .count { margin-left: auto; font-size: 11px; color: var(--ink-3); }
-.region-item .count b { color: var(--cat-amber); }
-.regions { border-bottom: 1px solid var(--line); }
-
 /* 抽屉操作按钮 */
 .drawer__actions {
   display: grid;
@@ -467,4 +449,89 @@ body {
   border: 2.5px solid #fff;
   box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.3), 0 0 18px rgba(255, 107, 53, 0.8);
   pointer-events: none;
+}
+
+/* ============================================
+   定位卡片（省/市）
+   ============================================ */
+.regions { border-bottom: 1px solid var(--line); }
+.region-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px 11px 16px;
+  margin: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--bg-2), transparent 65%);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+.region-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--cat-orange);
+  opacity: 0.75;
+}
+.region-card:hover {
+  border-color: var(--cat-orange);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px var(--track-glow);
+}
+.region-card .region-emoji { font-size: 17px; flex: none; }
+.region-card .info { min-width: 0; }
+.region-card .name { font-size: 12.5px; font-weight: 700; color: var(--ink-1); }
+.region-card .meta { font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+.region-card .count-pill {
+  margin-left: auto;
+  flex: none;
+  background: rgba(255, 107, 53, 0.14);
+  color: var(--cat-orange);
+  border-radius: 999px;
+  padding: 3px 11px;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================
+   回放指针（图表）
+   ============================================ */
+.chart__pin-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--cat-orange);
+  border: 2px solid var(--bg-0);
+  box-shadow: 0 0 10px rgba(255, 107, 53, 0.7);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 2;
+}
+.chart__pin-tip {
+  position: absolute;
+  top: 6px;
+  background: var(--bg-0);
+  border: 1px solid var(--cat-orange);
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--ink-1);
+  pointer-events: none;
+  z-index: 2;
+  white-space: nowrap;
+}
+.chart__pin-tip b { color: var(--cat-amber); }
+.chart__pin-tip span { color: var(--ink-3); font-size: 10px; }
+.drawer__actions button.active {
+  border-color: var(--cat-orange);
+  color: var(--cat-orange);
+  background: rgba(255, 107, 53, 0.1);
 }
