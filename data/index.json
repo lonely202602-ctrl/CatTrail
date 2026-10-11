@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-11T06:46:46.591Z",
+  "generatedAt": "2026-10-11T07:26:50.227Z",
   "totalKm": 141.2,
   "totalAscentM": 240,
   "rides": [
@@ -13,7 +13,9 @@
       "avgSpeedKmh": 19.7,
       "device": "BSC200S",
       "calorie": 1102,
-      "maxSpeedKmh": 35
+      "maxSpeedKmh": 35,
+      "province": "广东省",
+      "city": "广州市"
     },
     {
       "rideId": 56270143,
@@ -25,7 +27,9 @@
       "avgSpeedKmh": 19.6,
       "device": "BSC200S",
       "calorie": 1068,
-      "maxSpeedKmh": 32.8
+      "maxSpeedKmh": 32.8,
+      "province": "广东省",
+      "city": "广州市"
     },
     {
       "rideId": 54565197,
@@ -37,7 +41,9 @@
       "avgSpeedKmh": 19.8,
       "device": "BSC200S",
       "calorie": 859,
-      "maxSpeedKmh": 33.5
+      "maxSpeedKmh": 33.5,
+      "province": "广东省",
+      "city": "广州市"
     }
   ]
 }

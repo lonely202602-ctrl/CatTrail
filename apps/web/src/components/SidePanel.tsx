@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import type { RideInfo, RouteCluster } from '@lonelycat/shared';
 
 interface Props {
@@ -10,10 +10,11 @@ interface Props {
   selectedClusterId: string | null;
   onSelect: (id: number) => void;
   onSelectCluster: (id: string) => void;
+  onFocusRegion: (rideIds: number[]) => void;
 }
 
 export default function SidePanel({
-  rides, clusters, totalKm, totalAscentM, selectedId, selectedClusterId, onSelect, onSelectCluster,
+  rides, clusters, totalKm, totalAscentM, selectedId, selectedClusterId, onSelect, onSelectCluster, onFocusRegion,
 }: Props) {
   const ridesRef = useRef<HTMLDivElement>(null);
   const scrollTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -26,6 +27,23 @@ export default function SidePanel({
     clearTimeout(scrollTimer.current);
     scrollTimer.current = setTimeout(() => el.classList.remove('is-scrolling'), 900);
   };
+
+  // 省/市 → 骑行分组（同步时离线反查所得）
+  const regionGroups = useMemo(() => {
+    const byProv = new Map<string, Map<string, number[]>>();
+    for (const r of rides) {
+      const prov = r.province || '未知区域';
+      const city = r.city || prov;
+      if (!byProv.has(prov)) byProv.set(prov, new Map());
+      const cities = byProv.get(prov)!;
+      if (!cities.has(city)) cities.set(city, []);
+      cities.get(city)!.push(r.rideId);
+    }
+    return Array.from(byProv.entries()).map(([prov, cities]) => ({
+      prov,
+      cities: Array.from(cities.entries()).map(([city, ids]) => ({ city, ids })),
+    }));
+  }, [rides]);
 
   return (
     <aside className="panel">
@@ -52,6 +70,30 @@ export default function SidePanel({
           <b>{clusters.length}</b>
           <span>猫 径</span>
         </div>
+      </div>
+
+      <div className="rides regions">
+        <div className="rides__title">定 位</div>
+        <div className="region-item" onClick={() => onFocusRegion(rides.map((r) => r.rideId))}>
+          <span className="paw">🐾</span>
+          <div className="info">
+            <div className="name">全国视野</div>
+          </div>
+          <span className="arrow">⤢</span>
+        </div>
+        {regionGroups.map((g) =>
+          g.cities.map((c) => (
+            <div key={`${g.prov}-${c.city}`} className="region-item" onClick={() => onFocusRegion(c.ids)}>
+              <span className="paw">📍</span>
+              <div className="info">
+                <div className="name">{g.prov} · {c.city}</div>
+              </div>
+              <span className="count">
+                <b>{c.ids.length}</b> 次
+              </span>
+            </div>
+          )),
+        )}
       </div>
 
       {clusters.length > 0 && (

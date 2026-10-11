@@ -405,17 +405,66 @@ body {
 /* 品牌图标 */
 .brand-logo { width: 36px; height: 36px; flex: none; }
 
-/* 主题切换过渡（切主题期间给全部受控元素加色彩过渡） */
-.theme-switching .panel,
-.theme-switching .panel *,
-.theme-switching .drawer,
-.theme-switching .drawer *,
-.theme-switching .theme-toggle,
-.theme-switching .loading {
-  transition: background-color 0.5s ease, color 0.5s ease,
-    border-color 0.5s ease, box-shadow 0.5s ease, outline-color 0.5s ease !important;
-}
-
 /* 底图换肤淡出遮罩 */
 .map-canvas { transition: opacity 0.32s ease; }
 .map-canvas.map-fading { opacity: 0.15; }
+
+/* 主题切换：UI 整体淡出→换肤→淡入（opacity 走合成器，无重绘卡顿） */
+.panel, .theme-toggle, .drawer, .loading { transition: opacity 0.22s ease; }
+.theme-fading .panel,
+.theme-fading .theme-toggle,
+.theme-fading .drawer,
+.theme-fading .loading { opacity: 0; pointer-events: none; }
+
+/* 定位面板 */
+.region-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  margin: 2px 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+.region-item:hover { background: var(--bg-2); transform: translateX(2px); }
+.region-item .paw { font-size: 14px; }
+.region-item .name { font-size: 12px; font-weight: 600; }
+.region-item .count { margin-left: auto; font-size: 11px; color: var(--ink-3); }
+.region-item .count b { color: var(--cat-amber); }
+.regions { border-bottom: 1px solid var(--line); }
+
+/* 抽屉操作按钮 */
+.drawer__actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+.drawer__actions button {
+  padding: 10px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--ink-1);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, transform 0.18s ease, color 0.18s ease;
+}
+.drawer__actions button:hover {
+  border-color: var(--cat-orange);
+  color: var(--cat-orange);
+  transform: translateY(-1px);
+}
+
+/* 骑行回放光点 */
+.replay-dot {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #ff6b35;
+  border: 2.5px solid #fff;
+  box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.3), 0 0 18px rgba(255, 107, 53, 0.8);
+  pointer-events: none;
+}

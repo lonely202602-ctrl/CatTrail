@@ -18,21 +18,29 @@ export default function App() {
   const [tracks, setTracks] = useState<TrackFC | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
+  const [focusRideIds, setFocusRideIds] = useState<number[] | null>(null);
+  const [replayRideId, setReplayRideId] = useState<number | null>(null);
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [seriesCache, setSeriesCache] = useState<Record<number, RideSeriesPoint[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // 切换主题：UI 整体快速淡出 → 换肤 → 淡入（纯 opacity 合成器动画，零卡顿）
   useEffect(() => {
-    const root = document.documentElement;
-    // 切换期间统一加色彩过渡，避免生硬跳变
-    root.classList.add('theme-switching');
-    root.dataset.theme = theme;
+    document.documentElement.dataset.theme = theme;
     localStorage.setItem('cattrail-theme', theme);
-    const t = setTimeout(() => root.classList.remove('theme-switching'), 650);
-    return () => clearTimeout(t);
   }, [theme]);
+
+  const toggleTheme = () => {
+    const root = document.documentElement;
+    if (root.classList.contains('theme-fading')) return;
+    root.classList.add('theme-fading');
+    setTimeout(() => {
+      setTheme((t) => (t === 'night' ? 'day' : 'night'));
+      setTimeout(() => root.classList.remove('theme-fading'), 420);
+    }, 200);
+  };
 
   useEffect(() => {
     Promise.all([fetchRidesIndex(), fetchTracks(), fetchClusters()])
@@ -59,6 +67,19 @@ export default function App() {
 
   const rides = index?.rides ?? [];
   const detailRide = detailId != null ? rides.find((r) => r.rideId === detailId) : undefined;
+  const detailTrack =
+    detailId != null ? tracks?.features.find((f) => f.properties.rideId === detailId)?.geometry.coordinates ?? null : null;
+
+  const startReplay = (rideId: number) => {
+    setDetailId(null); // 关抽屉，把地图完整让给回放
+    setReplayRideId(rideId);
+  };
+
+  const clearFocus = () => {
+    setFocusRideIds(null);
+    setSelectedId(null);
+    setSelectedClusterId(null);
+  };
 
   return (
     <>
@@ -68,6 +89,9 @@ export default function App() {
         theme={theme}
         selectedId={selectedId}
         selectedClusterId={selectedClusterId}
+        focusRideIds={focusRideIds}
+        replayRideId={replayRideId}
+        onReplayEnd={() => setReplayRideId(null)}
         onSelect={(id) => {
           setSelectedId(id);
           setSelectedClusterId(null);
@@ -94,11 +118,16 @@ export default function App() {
           setSelectedClusterId(id);
           setSelectedId(null);
         }}
+        onFocusRegion={(ids) => {
+          setFocusRideIds(ids);
+          setSelectedId(null);
+          setSelectedClusterId(null);
+        }}
       />
 
       <button
         className="theme-toggle"
-        onClick={() => setTheme((t) => (t === 'night' ? 'day' : 'night'))}
+        onClick={toggleTheme}
         title={theme === 'night' ? '切换到晨巡' : '切换到夜巡'}
       >
         {theme === 'night' ? '☀️' : '🌙'}
@@ -109,6 +138,8 @@ export default function App() {
           ride={detailRide}
           series={seriesCache[detailId] ?? []}
           theme={theme}
+          track={detailTrack ?? []}
+          onReplay={() => detailId != null && startReplay(detailId)}
           onClose={() => setDetailId(null)}
         />
       )}

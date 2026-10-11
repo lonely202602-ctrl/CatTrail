@@ -1,11 +1,14 @@
-/** 轨迹分析抽屉：双击线路打开 —— 数据网格 + 速度/海拔/心率曲线（手写 SVG，零图表库） */
+/** 轨迹分析抽屉：双击线路打开 —— 数据网格 + 速度/海拔/心率曲线（手写 SVG，零图表库）+ 路书导出/回放 */
 import { useMemo, useState } from 'react';
 import type { RideInfo, RideSeriesPoint } from '@lonelycat/shared';
+import { exportGpx, exportShareCard } from '../lib/export';
 
 interface Props {
   ride: RideInfo;
   series: RideSeriesPoint[];
   theme: 'night' | 'day';
+  track: [number, number][];
+  onReplay: () => void;
   onClose: () => void;
 }
 
@@ -21,7 +24,7 @@ const CHART_COLORS = {
   day: { speed: ['#ff9a63', '#e8551f'], alt: ['#5fc4ae', '#2f9e8f'], hr: ['#f08a8a', '#d6455f'], axis: '#98a0af' },
 } as const;
 
-export default function ActivityDrawer({ ride, series, theme, onClose }: Props) {
+export default function ActivityDrawer({ ride, series, theme, track, onReplay, onClose }: Props) {
   const colors = CHART_COLORS[theme];
   const tMax = series.length > 0 ? series[series.length - 1].t : 0;
 
@@ -46,6 +49,12 @@ export default function ActivityDrawer({ ride, series, theme, onClose }: Props) 
         <div><b>{ride.ascentM}</b><span>累计爬升 m</span></div>
         <div><b>{ride.calorie ?? '—'}</b><span>卡路里 kcal</span></div>
         <div><b>{ride.maxSpeedKmh != null ? ride.maxSpeedKmh.toFixed(1) : '—'}</b><span>最高速度 km/h</span></div>
+      </div>
+
+      <div className="drawer__actions">
+        <button onClick={() => exportGpx(ride, track, series)}>⬇ 导出 GPX</button>
+        <button onClick={() => exportShareCard(ride, track, theme)}>🖼 分享卡片</button>
+        <button onClick={onReplay}>▶ 骑行回放</button>
       </div>
 
       <div className="drawer__charts">

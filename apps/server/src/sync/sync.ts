@@ -6,9 +6,10 @@ import { getEdgeKeys, login, listAllActivities, getActivityDetail, downloadFit, 
 import { parseFit } from '../igpsport/fit.js';
 import { openDb, upsertRide, getStoredSeriesVersions, listRides } from '../store/db.js';
 import { buildClusters } from '../clusters/cluster.js';
+import { resolveRegion } from '../geo/region.js';
 
 /** 序列数据结构版本：结构变更时 +1，旧记录自动回填重拉 */
-const SERIES_V = 1;
+const SERIES_V = 3;
 
 export interface SyncOptions {
   username: string;
@@ -69,6 +70,13 @@ export async function runSync(opts: SyncOptions): Promise<SyncSummary> {
     const points = await parseFit(fitBuf);
     const track = points.map((p) => [Number(p.lng.toFixed(6)), Number(p.lat.toFixed(6))] as [number, number]);
 
+    // 起点 → 省/市（DataV 边界离线判定，本地缓存）
+    const start = track[0];
+    const region = start ? await resolveRegion(start[0], start[1]) : { province: '', city: '' };
+    if (region.province) {
+      console.log(`    ↳ ${region.province}${region.city ? ' · ' + region.city : ''}`);
+    }
+
     const record: RideRecord = {
       rideId: row.rideId,
       title: row.title,
@@ -83,6 +91,8 @@ export async function runSync(opts: SyncOptions): Promise<SyncSummary> {
       series: buildSeries(points),
       calorie: detail.calorie,
       maxSpeedKmh: Math.round((detail.maxSpeed ?? 0) * 3.6 * 10) / 10,
+      province: region.province,
+      city: region.city,
     };
     upsertRide(record, SERIES_V);
     writeRideSnapshot(dataDir, record);
@@ -142,6 +152,8 @@ function toInfo(r: RideRecord): RideInfo {
     device: r.device,
     calorie: r.calorie,
     maxSpeedKmh: r.maxSpeedKmh,
+    province: r.province,
+    city: r.city,
   };
 }
 

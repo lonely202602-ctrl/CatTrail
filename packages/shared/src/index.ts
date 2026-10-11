@@ -11,6 +11,9 @@ export interface RideInfo {
   device: string;
   calorie?: number;
   maxSpeedKmh?: number;
+  /** 起点所在省/市（同步时离线反查） */
+  province?: string;
+  city?: string;
 }
 
 /** index.json / GET /api/activities 的结构（静态模式与服务端模式共用同一契约） */
