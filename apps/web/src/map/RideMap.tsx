@@ -37,6 +37,7 @@ export default function RideMap({
   const tracksRef = useRef<TrackFC | null>(null);
   const clustersRef = useRef<RouteCluster[]>(clusters);
   const selectedClusterRef = useRef<string | null>(selectedClusterId);
+  const replayProgressRef = useRef(0);
   const handlers = useRef({ onSelect, onSelectCluster, onOpenDetail, theme });
   handlers.current = { onSelect, onSelectCluster, onOpenDetail, theme };
   const markerRef = useRef<maplibregl.Marker | null>(null);
@@ -129,6 +130,101 @@ export default function RideMap({
     if (map.isStyleLoaded()) apply();
     else map.once('load', apply);
   }, [selectedClusterId, clusters, tracks]);
+
+
+  // 骑行回放：RAF 命令式驱动（60fps 渐进绘制），进度写入 store 供图表指针订阅；
+  // 自然播完后保留完整亮线（恢复原貌），中途停止才隐藏
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !tracks) return;
+    let raf = 0;
+    let stopped = false;
+
+    const hideReplay = () => {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      if (map.getSource('replay-line')) {
+        (map.getSource('replay-line') as maplibregl.GeoJSONSource)?.setData({
+          type: 'FeatureCollection',
+          features: [],
+        });
+      }
+    };
+
+    const begin = () => {
+      if (stopped) return;
+      if (replayRideId == null) {
+        // 播完自然结束：保留完整亮线；中途手动停止：隐藏
+        if (replayProgressRef.current >= 0.999) {
+          const f = tracks.features.find((x) => x.properties.rideId === replayRideId);
+          if (f) {
+            const src = ensureReplayLayers(map, handlers.current.theme);
+            src?.setData({
+              type: 'FeatureCollection',
+              features: [
+                { type: 'Feature', properties: f.properties, geometry: { type: 'LineString', coordinates: f.geometry.coordinates } },
+              ],
+            });
+          }
+        } else {
+          hideReplay();
+        }
+        return;
+      }
+      const f = tracks.features.find((x) => x.properties.rideId === replayRideId);
+      if (!f || f.geometry.coordinates.length < 2) return;
+      const coords = f.geometry.coordinates;
+      const src = ensureReplayLayers(map, handlers.current.theme);
+      if (!src) return;
+
+      const C = trailPalette(handlers.current.theme);
+      replayStore.start(replayRideId);
+      const DUR = 20000;
+      const start = performance.now();
+      const tick = (now: number) => {
+        if (stopped || !map.getSource('replay-line') || !markerRef.current) return;
+        const p = Math.min(1, (now - start) / DUR);
+        replayProgressRef.current = p;
+        const idx = Math.min(coords.length - 1, Math.floor(p * (coords.length - 1)));
+        markerRef.current.setLngLat(coords[idx]);
+        src.setData({
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              properties: {},
+              geometry: { type: 'LineString', coordinates: coords.slice(0, idx + 1) },
+            },
+          ],
+        });
+        replayStore.update(replayRideId, p);
+        if (p < 1) {
+          raf = requestAnimationFrame(tick);
+        } else {
+          // 播完：整条亮线保持（恢复原貌），1.2s 后通知 App 收尾
+          src.setData({
+            type: 'FeatureCollection',
+            features: [
+              { type: 'Feature', properties: f?.properties ?? {}, geometry: { type: 'LineString', coordinates: coords } },
+            ],
+          });
+          setTimeout(() => {
+            replayStore.stop();
+            handlers.current.onReplayEnd();
+          }, 1200);
+        }
+      };
+      raf = requestAnimationFrame(tick);
+    };
+
+    // 样式未就绪时（慢网络）轮询等待，避免 "Style is not done loading" 异常
+    waitStyleReady(map, begin);
+
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [replayRideId, tracks]);
 
   /** 挂载轨迹图层 + 渐进描线动画 + 交互（幂等：换肤后重复调用安全） */
   function mountTracks(map: maplibregl.Map, fc: TrackFC) {
