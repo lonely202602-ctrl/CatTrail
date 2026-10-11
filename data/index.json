@@ -1,0 +1,37 @@
+{
+  "generatedAt": "2026-10-11T06:15:57.222Z",
+  "totalKm": 141.2,
+  "totalAscentM": 240,
+  "rides": [
+    {
+      "rideId": 56284695,
+      "title": "户外骑行",
+      "date": "2026-09-12 13:55:13",
+      "distanceKm": 52.34,
+      "movingTimeSec": 9569,
+      "ascentM": 119,
+      "avgSpeedKmh": 19.7,
+      "device": "BSC200S"
+    },
+    {
+      "rideId": 56270143,
+      "title": "户外骑行",
+      "date": "2026-08-29 15:55:39",
+      "distanceKm": 50.22,
+      "movingTimeSec": 9215,
+      "ascentM": 61,
+      "avgSpeedKmh": 19.6,
+      "device": "BSC200S"
+    },
+    {
+      "rideId": 54565197,
+      "title": "户外骑行",
+      "date": "2026-08-15 15:26:09",
+      "distanceKm": 38.64,
+      "movingTimeSec": 7027,
+      "ascentM": 60,
+      "avgSpeedKmh": 19.8,
+      "device": "BSC200S"
+    }
+  ]
+}

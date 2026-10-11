@@ -1,0 +1,31 @@
+# deps / build
+node_modules/
+dist/
+.vite/
+
+# 密钥与凭据（绝不提交）
+.env
+.env.*
+!.env.example
+**/tokens*.json
+**/token*.txt
+**/login*.json
+**/edge_key.json
+
+# iGPSPORT 官方资源运行时缓存（合规：不入库）
+apps/server/.cache/
+
+# 原始 FIT 大文件（轨迹 GeoJSON 保留）
+data/rides/*.fit
+
+# 归档实验目录（内部参考，不发布）
+igpsport-test/
+coros-mcp-test/
+
+# misc
+*.log
+.DS_Store
+
+# 数据库与运行缓存
+*.db
+.cache/

@@ -1,0 +1,21 @@
+{
+  "name": "@lonelycat/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --watch --import tsx src/index.ts",
+    "sync": "node --env-file-if-exists=.env --import tsx src/run-sync.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lonelycat/shared": "*",
+    "fastify": "^5.0.0",
+    "fit-file-parser": "^6.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}
