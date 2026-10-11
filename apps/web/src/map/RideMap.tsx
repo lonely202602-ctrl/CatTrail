@@ -145,6 +145,12 @@ export default function RideMap({
       } as TrackFC;
       map.addSource('tracks', { type: 'geojson', data: stub });
 
+      // 透明宽命中层：点击/悬停判定走它（粗判定，细节由列表细分）
+      map.addLayer({
+        id: 'track-hit', type: 'line', source: 'tracks',
+        paint: { 'line-color': C.track, 'line-opacity': 0, 'line-width': 30 },
+      });
+
       map.addLayer({
         id: 'track-glow', type: 'line', source: 'tracks',
         paint: { 'line-color': C.track, 'line-width': 14, 'line-opacity': 0.28, 'line-blur': 5 },
@@ -227,30 +233,30 @@ export default function RideMap({
       return;
     }
 
-    // 交互：单击 → 历史小卡片；双击 → 轨迹分析抽屉
-    ['track-draw', 'track-halo', 'track-glow'].forEach((id) => {
-      map.on('mouseenter', id, () => (map.getCanvas().style.cursor = 'pointer'));
-      map.on('mouseleave', id, () => (map.getCanvas().style.cursor = ''));
-      map.on('click', id, (e) => {
-        const p = e.features?.[0]?.properties;
-        if (!p) return;
-        const rideId = Number(p.rideId);
-        handlers.current.onSelect(rideId);
-        showHistoryCard(map, e.lngLat, p, clustersRef.current, (id) => handlers.current.onOpenDetail(id));
-      });
-      map.on('dblclick', id, (e) => {
-        const p = e.features?.[0]?.properties;
-        if (!p) return;
-        e.preventDefault();
-        handlers.current.onOpenDetail(Number(p.rideId));
-      });
+    // 交互（走宽命中层）：单击 → 历史小卡片；双击 → 轨迹分析抽屉
+    map.on('mouseenter', 'track-hit', () => (map.getCanvas().style.cursor = 'pointer'));
+    map.on('mouseleave', 'track-hit', () => (map.getCanvas().style.cursor = ''));
+    map.on('click', 'track-hit', (e) => {
+      const p = e.features?.[0]?.properties;
+      if (!p) return;
+      const rideId = Number(p.rideId);
+      handlers.current.onSelect(rideId);
+      showHistoryCard(map, e.lngLat, p, clustersRef.current, (id) => handlers.current.onOpenDetail(id));
+    });
+    map.on('dblclick', 'track-hit', (e) => {
+      const p = e.features?.[0]?.properties;
+      if (!p) return;
+      e.preventDefault();
+      handlers.current.onOpenDetail(Number(p.rideId));
     });
     map.on('click', (e) => {
-      const hit = ['track-draw', 'track-halo', 'track-glow'].some((id) =>
-        map.queryRenderedFeatures(e.point, { layers: [id] }).length > 0,
-      );
+      var hit = false;
+      try { hit = m_queryHit(e.point); } catch (err) { hit = false; }
       if (!hit) handlers.current.onSelectCluster('');
     });
+    function m_queryHit(point: maplibregl.PointLike) {
+      return map.queryRenderedFeatures(point, { layers: ['track-hit'] }).length > 0;
+    }
   }
 
   /** 聚焦模式：查看/回放某条线路时，其余线路大幅淡化；猫径高亮让位于聚焦主体 */
