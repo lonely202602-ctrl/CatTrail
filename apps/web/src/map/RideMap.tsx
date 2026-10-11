@@ -132,8 +132,8 @@ export default function RideMap({
   }, [selectedClusterId, clusters, tracks]);
 
 
-  // 骑行回放：RAF 命令式驱动（60fps 渐进绘制），进度写入 store 供图表指针订阅；
-  // 自然播完后保留完整亮线（恢复原貌），中途停止才隐藏
+  // 骑行回放：光点沿轨迹移动 + 已骑路径渐进点亮
+  // 渐变创建时静态设置（涂色），每帧只更新部分线几何——终点恒等于光点位置
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !tracks) return;
@@ -154,21 +154,8 @@ export default function RideMap({
     const begin = () => {
       if (stopped) return;
       if (replayRideId == null) {
-        // 播完自然结束：保留完整亮线；中途手动停止：隐藏
-        if (replayProgressRef.current >= 0.99) {
-          const f = tracks.features.find((x) => x.properties.rideId === replayRideId);
-          if (f) {
-            const src = ensureReplayLayers(map, handlers.current.theme);
-            src?.setData({
-              type: 'FeatureCollection',
-              features: [
-                { type: 'Feature', properties: f.properties, geometry: { type: 'LineString', coordinates: f.geometry.coordinates } },
-              ],
-            });
-          }
-        } else {
-          hideReplay();
-        }
+        // 自然播完（进度≥0.99）：保留完整亮线与终点光点；中途停止：隐藏
+        if (replayProgressRef.current < 0.99) hideReplay();
         return;
       }
       const f = tracks.features.find((x) => x.properties.rideId === replayRideId);
@@ -178,11 +165,17 @@ export default function RideMap({
       if (!src) return;
 
       const C = trailPalette(handlers.current.theme);
+      // 静态渐变：主体主题色，头部 10% 微光提亮
+      map.setPaintProperty('replay-line', 'line-gradient',
+        ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.9, C.track, 1, C.hi]);
+      map.setPaintProperty('replay-glow', 'line-gradient',
+        ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.85, C.track, 1, C.hi]);
+
       replayStore.start(replayRideId);
       const DUR = 20000;
       const start = performance.now();
       const tick = (now: number) => {
-        if (stopped || !map.getSource('replay-line') || !markerRef.current) return;
+        if (stopped || !markerRef.current || !map.getSource('replay-line')) return;
         const p = Math.min(1, (now - start) / DUR);
         replayProgressRef.current = p;
         const idx = Math.min(coords.length - 1, Math.floor(p * (coords.length - 1)));
