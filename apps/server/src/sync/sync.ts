@@ -108,7 +108,7 @@ export async function runSync(opts: SyncOptions): Promise<SyncSummary> {
       added++;
       console.log(`  + ${record.date} ${record.title}: ${record.distanceKm}km / ${track.length} 点 / ${record.series?.length ?? 0} 序列点`);
     } catch (e) {
-      const reason = String((e as Error).message ?? e).slice(0, 200);
+      const reason = String((e as Error).message ?? e).slice(0, 400);
       failures.push({ rideId: row.rideId, title: row.title, reason });
       console.warn(`  ! 跳过 ${row.title}(#${row.rideId})：${reason}`);
     }

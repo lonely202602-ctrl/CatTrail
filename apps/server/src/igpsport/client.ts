@@ -130,19 +130,27 @@ export async function getActivityDetail(keys: EdgeKeys, token: string, rideId: n
   )) as ActivityDetail;
 }
 
-/** 下载 FIT 原始文件（OSS 直链，无需签名），并校验内容确为 FIT */
+/** 下载 FIT 原始文件（OSS 直链，无需签名），校验文件头并尝试自修复非标准前缀 */
 export async function downloadFit(fitUrl: string): Promise<Buffer> {
   const res = await fetch(fitUrl);
   if (!res.ok) throw new Error(`FIT 下载失败 HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
-  // FIT 文件头：bytes 4-7 固定为 ".FIT"；链接失效/被拦时 OSS 常返回 200 + XML/HTML 错误页
-  if (buf.length < 12 || buf.toString('latin1', 4, 8) !== '.FIT') {
-    const sniff = buf.subarray(0, 120).toString('utf8').replace(/[^\x20-\x7e]/g, ' ').trim().slice(0, 80);
-    throw new Error(
-      `下载内容不是有效 FIT 文件（content-type: ${res.headers.get('content-type') ?? '未知'}, ${buf.length} 字节${sniff ? `, 开头: ${sniff}` : ''}）`,
-    );
+  // 标准头：bytes 4-7 固定 ".FIT"；链接失效/被拦时 OSS 常返回 200 + XML/HTML 错误页
+  if (buf.length >= 12 && buf.toString('latin1', 4, 8) === '.FIT') return buf;
+
+  // 非标准头：部分设备/链路会在 FIT 头前带垃圾前缀——在前 64 字节里搜 ".FIT"，
+  // 其前 4 字节应为头长度字节（0x0C/0x0E），命中则从真正的文件头开始截取
+  const idx = buf.subarray(0, 64).toString('latin1').indexOf('.FIT');
+  if (idx >= 4 && (buf[idx - 4] === 0x0e || buf[idx - 4] === 0x0c)) {
+    return buf.subarray(idx - 4);
   }
-  return buf;
+
+  const hex = buf.subarray(0, 24).toString('hex').replace(/(..)/g, '$1 ').trim();
+  const declared = res.headers.get('content-length');
+  throw new Error(
+    `下载内容不是有效 FIT 文件（content-type: ${res.headers.get('content-type') ?? '未知'}, ` +
+      `${buf.length}/${declared ?? '?'} 字节, 头部24B: ${hex}, 链接: ${fitUrl.slice(0, 90)}）`,
+  );
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
