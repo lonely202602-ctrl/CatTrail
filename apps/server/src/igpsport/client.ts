@@ -130,11 +130,19 @@ export async function getActivityDetail(keys: EdgeKeys, token: string, rideId: n
   )) as ActivityDetail;
 }
 
-/** 下载 FIT 原始文件（OSS 直链，无需签名） */
+/** 下载 FIT 原始文件（OSS 直链，无需签名），并校验内容确为 FIT */
 export async function downloadFit(fitUrl: string): Promise<Buffer> {
   const res = await fetch(fitUrl);
   if (!res.ok) throw new Error(`FIT 下载失败 HTTP ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
+  const buf = Buffer.from(await res.arrayBuffer());
+  // FIT 文件头：bytes 4-7 固定为 ".FIT"；链接失效/被拦时 OSS 常返回 200 + XML/HTML 错误页
+  if (buf.length < 12 || buf.toString('latin1', 4, 8) !== '.FIT') {
+    const sniff = buf.subarray(0, 120).toString('utf8').replace(/[^\x20-\x7e]/g, ' ').trim().slice(0, 80);
+    throw new Error(
+      `下载内容不是有效 FIT 文件（content-type: ${res.headers.get('content-type') ?? '未知'}, ${buf.length} 字节${sniff ? `, 开头: ${sniff}` : ''}）`,
+    );
+  }
+  return buf;
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

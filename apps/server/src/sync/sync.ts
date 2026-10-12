@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { RideSeriesPoint, RideRecord, RidesIndex, RideInfo } from '@lonelycat/shared';
 import { getEdgeKeys, login, listAllActivities, getActivityDetail, downloadFit, sleep } from '../igpsport/client.js';
-import { parseFit, type TrackPoint } from '../igpsport/fit.js';
+import { parseFit, type TrackPoint, type FitMeta } from '../igpsport/fit.js';
 import { openDb, upsertRide, getStoredSeriesVersions, listRides } from '../store/db.js';
 import { buildClusters } from '../clusters/cluster.js';
 import { resolveRegion } from '../geo/region.js';
@@ -25,6 +25,14 @@ export interface SyncSummary {
   added: number;
   skipped: number;
   totalKm: number;
+  /** 单条活动同步失败（如 FIT 链接失效）不中断整体，逐条记录在这里 */
+  failures: RideSyncFailure[];
+}
+
+export interface RideSyncFailure {
+  rideId: number;
+  title: string;
+  reason: string;
 }
 
 function haversine(a: [number, number], b: [number, number]): number {
@@ -57,52 +65,59 @@ export async function runSync(opts: SyncOptions): Promise<SyncSummary> {
   const versions = getStoredSeriesVersions(userId);
   let added = 0;
   let skipped = 0;
+  const failures: RideSyncFailure[] = [];
 
   for (const row of rows) {
     if (versions.get(row.rideId) === SERIES_V) {
       skipped++;
       continue;
     }
-    await sleep(intervalMs);
-    const detail = await getActivityDetail(keys, session.access_token, row.rideId);
-    await sleep(intervalMs);
-    const fitBuf = await downloadFit(detail.fitUrl);
-    const { points } = await parseFit(fitBuf);
-    const track = points.map((p) => [Number(p.lng.toFixed(6)), Number(p.lat.toFixed(6))] as [number, number]);
+    try {
+      await sleep(intervalMs);
+      const detail = await getActivityDetail(keys, session.access_token, row.rideId);
+      await sleep(intervalMs);
+      const fitBuf = await downloadFit(detail.fitUrl);
+      const { points } = await parseFit(fitBuf);
+      const track = points.map((p) => [Number(p.lng.toFixed(6)), Number(p.lat.toFixed(6))] as [number, number]);
 
-    // 起点 → 省/市（DataV 边界离线判定，本地缓存）
-    const start = track[0];
-    const region = start ? await resolveRegion(start[0], start[1]) : { province: '', city: '' };
-    if (region.province) {
-      console.log(`    ↳ ${region.province}${region.city ? ' · ' + region.city : ''}`);
+      // 起点 → 省/市（DataV 边界离线判定，本地缓存）
+      const start = track[0];
+      const region = start ? await resolveRegion(start[0], start[1]) : { province: '', city: '' };
+      if (region.province) {
+        console.log(`    ↳ ${region.province}${region.city ? ' · ' + region.city : ''}`);
+      }
+
+      const record: RideRecord = {
+        rideId: row.rideId,
+        title: row.title,
+        date: (detail.startTime ?? row.startTime).replace(/\./g, '-').slice(0, 19),
+        distanceKm: Math.round((row.rideDistance / 1000) * 100) / 100,
+        movingTimeSec: row.totalMovingTime,
+        ascentM: row.totalAscent,
+        avgSpeedKmh: Math.round((row.avgSpeed ?? 0) * 3.6 * 10) / 10,
+        device: row.productName ?? 'iGPSPORT',
+        fitUrl: detail.fitUrl,
+        track,
+        series: buildSeries(points),
+        calorie: detail.calorie,
+        maxSpeedKmh: Math.round(Number(detail.maxSpeed ?? 0) * 3.6 * 10) / 10,
+        province: region.province,
+        city: region.city,
+      };
+      upsertRide(record, SERIES_V, userId);
+      added++;
+      console.log(`  + ${record.date} ${record.title}: ${record.distanceKm}km / ${track.length} 点 / ${record.series?.length ?? 0} 序列点`);
+    } catch (e) {
+      const reason = String((e as Error).message ?? e).slice(0, 200);
+      failures.push({ rideId: row.rideId, title: row.title, reason });
+      console.warn(`  ! 跳过 ${row.title}(#${row.rideId})：${reason}`);
     }
-
-    const record: RideRecord = {
-      rideId: row.rideId,
-      title: row.title,
-      date: (detail.startTime ?? row.startTime).replace(/\./g, '-').slice(0, 19),
-      distanceKm: Math.round((row.rideDistance / 1000) * 100) / 100,
-      movingTimeSec: row.totalMovingTime,
-      ascentM: row.totalAscent,
-      avgSpeedKmh: Math.round((row.avgSpeed ?? 0) * 3.6 * 10) / 10,
-      device: row.productName ?? 'iGPSPORT',
-      fitUrl: detail.fitUrl,
-      track,
-      series: buildSeries(points),
-      calorie: detail.calorie,
-      maxSpeedKmh: Math.round(Number(detail.maxSpeed ?? 0) * 3.6 * 10) / 10,
-      province: region.province,
-      city: region.city,
-    };
-    upsertRide(record, SERIES_V, userId);
-    added++;
-    console.log(`  + ${record.date} ${record.title}: ${record.distanceKm}km / ${track.length} 点 / ${record.series?.length ?? 0} 序列点`);
   }
 
   const totalKm = Math.round(
     listRides(userId).reduce((sum, r) => sum + r.distanceKm, 0) * 100,
   ) / 100;
-  return { fetched: rows.length, added, skipped, totalKm };
+  return { fetched: rows.length, added, skipped, totalKm, failures };
 }
 
 function ensureDir(p: string) {
@@ -194,7 +209,17 @@ export interface IngestSummary {
 /** FIT 手动上传入库：解析 → 建记录（rideId 取起点时间，重传即覆盖）→ 快照刷新 */
 export async function ingestFitRide(buf: Buffer, userId: string): Promise<IngestSummary> {
   openDb();
-  const { points, meta } = await parseFit(buf);
+  // 非法文件提前拦截：FIT 文件头 bytes 4-7 固定 ".FIT"
+  if (buf.length < 12 || buf.toString('latin1', 4, 8) !== '.FIT') {
+    throw new Error('这不是有效的 FIT 文件，请从码表 App 导出 .fit 后再拖入');
+  }
+  let points: TrackPoint[];
+  let meta: FitMeta;
+  try {
+    ({ points, meta } = await parseFit(buf));
+  } catch (e) {
+    throw new Error(`FIT 文件解析失败（文件可能已损坏）：${String((e as Error).message ?? e).slice(0, 120)}`);
+  }
   if (points.length < 2) throw new Error('FIT 内没有可用轨迹点');
 
   const firstTime = points.find((p) => p.time)?.time ?? meta.startTime;

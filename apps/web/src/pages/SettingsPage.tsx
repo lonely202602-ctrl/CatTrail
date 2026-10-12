@@ -34,7 +34,14 @@ export function SettingsPage({
           clearInterval(iv);
           setSyncJob(null);
           const r = j.result!;
-          setSyncMsg({ ok: true, text: `同步完成：拉取 ${r.fetched} 条，新增 ${r.added}，跳过 ${r.skipped}，总里程 ${r.totalKm} km` });
+          const base = `同步完成：拉取 ${r.fetched} 条，新增 ${r.added}，跳过 ${r.skipped}，总里程 ${r.totalKm} km`;
+          const fails = r.failures ?? [];
+          const text = fails.length
+            ? `${base}；${fails.length} 条失败已跳过：${fails
+                .map((f) => `${f.title || `#${f.rideId}`}（${f.reason}）`)
+                .join('；')}`
+            : base;
+          setSyncMsg({ ok: fails.length === 0, text });
           onDataChanged();
         } else if (j.status === 'error') {
           clearInterval(iv);

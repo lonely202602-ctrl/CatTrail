@@ -157,11 +157,18 @@ export async function clearIgpsportSettings(): Promise<void> {
   await api('/api/settings/igpsport', { method: 'DELETE' });
 }
 
+export interface SyncFailure {
+  rideId: number;
+  title: string;
+  reason: string;
+}
+
 export interface SyncResult {
   fetched: number;
   added: number;
   skipped: number;
   totalKm: number;
+  failures?: SyncFailure[];
 }
 
 /** 发起同步：立即返回 jobId，后台执行（前端轮询 getJob） */
