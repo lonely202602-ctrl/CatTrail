@@ -10,7 +10,13 @@ export type TrailTheme = 'night' | 'day';
 /** 同源瓦片代理前缀（style 对象在浏览器构建，location 一定存在） */
 const TILES = `${location.origin}/tiles`;
 
-const COALESCE_ZH = ['coalesce', ['get', 'name:zh'], ['get', 'name']] as unknown as string[];
+// 简体优先：港台等地的 name:zh 常为繁体，数据自带 name:zh-Hans 简体字段
+const COALESCE_ZH = [
+  'coalesce',
+  ['get', 'name:zh-Hans'],
+  ['get', 'name:zh'],
+  ['get', 'name'],
+] as unknown as string[];
 
 const PALETTES = {
   night: {
