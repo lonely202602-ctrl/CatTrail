@@ -1173,3 +1173,12 @@ body {
 
 /* 详情卡片：删除按钮让位右上角关闭按钮 */
 .rdcard__delete { margin-right: 42px; }
+
+/* 透明底 logo：夜巡深色场景补浅色衬底保证黑猫可读（晨巡保持全透明） */
+:root[data-theme='night'] .navbar__logo,
+:root[data-theme='night'] .authcard__logo,
+:root[data-theme='night'] .brand-logo {
+  background: rgba(244, 241, 232, 0.96);
+  border-radius: 22%;
+  padding: 2px;
+}
