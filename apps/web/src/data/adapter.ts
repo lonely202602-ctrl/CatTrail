@@ -48,3 +48,77 @@ export async function fetchTracks(): Promise<TrackFC> {
   if (!r.ok) throw new Error(`加载轨迹失败 (${r.status})`);
   return r.json();
 }
+
+/* ---------- 设置页 / 手动导入（仅自有后端模式可用） ---------- */
+
+function requireServer() {
+  if (DATA_MODE === 'static') throw new Error('静态演示模式不支持该功能，请使用自有后端部署');
+}
+
+export interface IgpsportSettings {
+  bound: boolean;
+  source: 'stored' | 'env' | 'none';
+  /** 脱敏用户名（a***@qq.com） */
+  username: string | null;
+}
+
+export async function fetchIgpsportSettings(): Promise<IgpsportSettings> {
+  requireServer();
+  const r = await fetch('/api/settings/igpsport');
+  if (!r.ok) throw new Error(`读取绑定状态失败 (${r.status})`);
+  return r.json();
+}
+
+export async function saveIgpsportSettings(username: string, password: string): Promise<IgpsportSettings> {
+  requireServer();
+  const r = await fetch('/api/settings/igpsport', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error ?? `绑定失败 (${r.status})`);
+  return d as IgpsportSettings;
+}
+
+export async function clearIgpsportSettings(): Promise<void> {
+  requireServer();
+  const r = await fetch('/api/settings/igpsport', { method: 'DELETE' });
+  if (!r.ok) throw new Error(`解绑失败 (${r.status})`);
+}
+
+export interface SyncResult {
+  fetched: number;
+  added: number;
+  skipped: number;
+  totalKm: number;
+}
+
+export async function triggerSync(): Promise<SyncResult> {
+  requireServer();
+  const r = await fetch('/api/sync', { method: 'POST' });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error ?? `同步失败 (${r.status})`);
+  return d as SyncResult;
+}
+
+export interface FitUploadResult {
+  ok: true;
+  rideId: number;
+  date: string;
+  distanceKm: number;
+  movingTimeSec: number;
+  replaced: boolean;
+}
+
+export async function uploadFit(file: File): Promise<FitUploadResult> {
+  requireServer();
+  const r = await fetch('/api/activities/fit', {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream' },
+    body: file,
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error ?? `上传失败 (${r.status})`);
+  return d as FitUploadResult;
+}

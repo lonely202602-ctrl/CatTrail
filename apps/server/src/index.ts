@@ -6,6 +6,7 @@ import { openDb, listRides } from './store/db.js';
 import { writeIndexSnapshot } from './sync/sync.js';
 import { buildClusters } from './clusters/cluster.js';
 import { fetchUpstream, rewriteTileJSON, originOf } from './tiles/proxy.js';
+import { readCreds, writeCreds, clearCreds, maskUsername } from './store/credentials.js';
 import type { RidesIndex, RideRecord } from '@lonelycat/shared';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -13,6 +14,9 @@ const DATA_DIR = path.resolve(import.meta.dirname, process.env.DATA_DIR ?? '../.
 
 openDb();
 const app = Fastify({ logger: { transport: undefined } });
+
+// FIT 上传走原始二进制体
+app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_req, body, done) => done(null, body));
 
 function readStaticData(file: string): string | null {
   const p = path.join(DATA_DIR, file);
@@ -119,14 +123,16 @@ app.get('/tiles/*', async (req, reply) => {
   }
 });
 
-/** 触发同步（凭据在服务端环境变量，浏览器永远接触不到） */
+/** 触发同步（凭据优先用页面绑定的账号，回退服务端环境变量） */
 app.post('/api/sync', async (req, reply) => {
   const token = process.env.SYNC_TOKEN;
   if (token && req.headers['x-sync-token'] !== token) {
     return reply.code(401).send({ error: 'unauthorized' });
   }
-  const { username, password } = process.env;
-  if (!username || !password) return reply.code(400).send({ error: '服务端未配置 IGPSPORT 凭据' });
+  const stored = readCreds();
+  const username = stored?.username ?? process.env.IGPSPORT_USERNAME;
+  const password = stored?.password ?? process.env.IGPSPORT_PASSWORD;
+  if (!username || !password) return reply.code(400).send({ error: '未绑定 iGPSPORT 账号，请先在设置页绑定' });
   try {
     const { runSync } = await import('./sync/sync.js');
     const summary = await runSync({ username, password, dataDir: DATA_DIR });
@@ -136,17 +142,40 @@ app.post('/api/sync', async (req, reply) => {
   }
 });
 
-/** FIT 上传（v0.1：原始二进制 body + ?rideId=），与自动同步共用解析链 */
+/** iGPSPORT 账号绑定状态（密码永不回传，只回脱敏用户名） */
+app.get('/api/settings/igpsport', async () => {
+  const stored = readCreds();
+  if (stored) return { bound: true, source: 'stored', username: maskUsername(stored.username) };
+  if (process.env.IGPSPORT_USERNAME) {
+    return { bound: true, source: 'env', username: maskUsername(process.env.IGPSPORT_USERNAME) };
+  }
+  return { bound: false, source: 'none', username: null };
+});
+
+/** 绑定/换绑：凭据写入自部署服务器本地（.cache/igpsport-auth.json，不入仓库） */
+app.post('/api/settings/igpsport', async (req, reply) => {
+  const { username, password } = (req.body ?? {}) as { username?: string; password?: string };
+  if (!username || !password) return reply.code(400).send({ error: '需要 username 与 password' });
+  writeCreds(username, password);
+  return { ok: true, source: 'stored', username: maskUsername(username) };
+});
+
+/** 解绑 */
+app.delete('/api/settings/igpsport', async () => {
+  clearCreds();
+  return { ok: true };
+});
+
+/** FIT 手动上传：解析 → 入库 → 快照刷新（rideId 取起点时间，同一次骑行重传即覆盖） */
 app.post('/api/activities/fit', async (req, reply) => {
-  const rideId = Number((req.query as { rideId?: string }).rideId ?? 0);
   const buf = req.body as Buffer;
-  if (!rideId || !Buffer.isBuffer(buf) || buf.length === 0) {
-    return reply.code(400).send({ error: '需要 rideId 查询参数与二进制 FIT body' });
+  if (!Buffer.isBuffer(buf) || buf.length === 0) {
+    return reply.code(400).send({ error: '需要二进制 FIT 文件体（application/octet-stream）' });
   }
   try {
-    const { parseFit } = await import('./igpsport/fit.js');
-    const points = await parseFit(buf);
-    return { ok: true, rideId, points: points.length };
+    const { ingestFitRide } = await import('./sync/sync.js');
+    const summary = await ingestFitRide(buf, DATA_DIR);
+    return { ok: true, ...summary };
   } catch (e) {
     return reply.code(400).send({ error: String((e as Error).message ?? e) });
   }

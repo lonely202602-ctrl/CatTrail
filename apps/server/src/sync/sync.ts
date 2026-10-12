@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { RideSeriesPoint, RideRecord, RidesIndex, RideInfo } from '@lonelycat/shared';
 import { getEdgeKeys, login, listAllActivities, getActivityDetail, downloadFit, sleep } from '../igpsport/client.js';
-import { parseFit } from '../igpsport/fit.js';
+import { parseFit, type TrackPoint } from '../igpsport/fit.js';
 import { openDb, upsertRide, getStoredSeriesVersions, listRides } from '../store/db.js';
 import { buildClusters } from '../clusters/cluster.js';
 import { resolveRegion } from '../geo/region.js';
@@ -35,7 +35,7 @@ function haversine(a: [number, number], b: [number, number]): number {
 }
 
 /** FIT 采样点 → 逐秒序列（t 相对起始秒；无时间戳时按 1s 采样兜底） */
-function buildSeries(points: ReturnType<typeof parseFit> extends Promise<infer P> ? P : never[]): RideSeriesPoint[] {
+function buildSeries(points: TrackPoint[]): RideSeriesPoint[] {
   const first = points.find((p) => p.time)?.time;
   const t0 = first ? Date.parse(first) : null;
   return points.map((p, i) => ({
@@ -67,7 +67,7 @@ export async function runSync(opts: SyncOptions): Promise<SyncSummary> {
     const detail = await getActivityDetail(keys, session.access_token, row.rideId);
     await sleep(intervalMs);
     const fitBuf = await downloadFit(detail.fitUrl);
-    const points = await parseFit(fitBuf);
+    const { points } = await parseFit(fitBuf);
     const track = points.map((p) => [Number(p.lng.toFixed(6)), Number(p.lat.toFixed(6))] as [number, number]);
 
     // 起点 → 省/市（DataV 边界离线判定，本地缓存）
@@ -183,4 +183,76 @@ export function writeIndexSnapshot(dataDir: string, rides: RideRecord[]) {
 export function writeClustersSnapshot(dataDir: string, rides: RideRecord[]) {
   ensureDir(dataDir);
   fs.writeFileSync(path.join(dataDir, 'clusters.json'), JSON.stringify(buildClusters(rides), null, 2));
+}
+
+export interface IngestSummary {
+  rideId: number;
+  date: string;
+  distanceKm: number;
+  movingTimeSec: number;
+  /** 同一骑行时间已存在 = 覆盖更新 */
+  replaced: boolean;
+}
+
+/** FIT 手动上传入库：解析 → 建记录（rideId 取起点时间，重传即覆盖）→ 快照刷新 */
+export async function ingestFitRide(buf: Buffer, dataDir: string): Promise<IngestSummary> {
+  openDb();
+  const { points, meta } = await parseFit(buf);
+  if (points.length < 2) throw new Error('FIT 内没有可用轨迹点');
+
+  const firstTime = points.find((p) => p.time)?.time ?? meta.startTime;
+  if (!firstTime) throw new Error('FIT 缺少时间戳，无法定位骑行时间');
+  const t0 = Date.parse(firstTime);
+  if (!Number.isFinite(t0)) throw new Error('FIT 时间戳无法解析');
+
+  const lastTime = [...points].reverse().find((p) => p.time)?.time;
+  const movingTimeSec = lastTime ? Math.max(0, Math.round((Date.parse(lastTime) - t0) / 1000)) : 0;
+  const distanceM = meta.totalDistanceM ?? 0;
+  if (distanceM < 100) throw new Error('FIT 累计距离过短（<100m），疑似无效骑行文件');
+
+  const track = points.map((p) => [Number(p.lng.toFixed(6)), Number(p.lat.toFixed(6))] as [number, number]);
+
+  // 爬升：海拔正增量累加（0.5m 噪声门槛滤漂移）
+  let ascentRaw = 0;
+  for (let i = 1; i < points.length; i++) {
+    const d = (points[i].alt ?? 0) - (points[i - 1].alt ?? 0);
+    if (d > 0.5) ascentRaw += d;
+  }
+
+  // 起点时间转东八区显示时间；rideId = 起点时间数字（同一次骑行重传即覆盖）
+  const cnDate = new Date(t0 + 8 * 3600e3).toISOString();
+  const date = cnDate.slice(0, 19).replace('T', ' ');
+  const rideId = Number(date.replace(/[-: ]/g, '').slice(0, 14));
+  const distanceKm = Math.round((distanceM / 1000) * 100) / 100;
+  const avgSpeedKmh = movingTimeSec > 0 ? Math.round((distanceKm / (movingTimeSec / 3600)) * 10) / 10 : 0;
+
+  const region = await resolveRegion(track[0][0], track[0][1]);
+
+  const record: RideRecord = {
+    rideId,
+    title: '户外骑行',
+    date,
+    distanceKm,
+    movingTimeSec,
+    ascentM: Math.round(ascentRaw),
+    avgSpeedKmh,
+    device: 'FIT 导入',
+    fitUrl: '',
+    track,
+    series: buildSeries(points),
+    maxSpeedKmh: meta.maxSpeedKmh != null ? Math.round(meta.maxSpeedKmh * 10) / 10 : undefined,
+    calorie: meta.calories,
+    province: region.province,
+    city: region.city,
+  };
+
+  const replaced = listRides().some((r) => r.rideId === rideId);
+  upsertRide(record, SERIES_V);
+  writeRideSnapshot(dataDir, record);
+  writeSeriesSnapshot(dataDir, record);
+  const rides = listRides();
+  writeIndexSnapshot(dataDir, rides);
+  writeClustersSnapshot(dataDir, rides);
+  console.log(`  + [FIT导入] ${record.date}: ${record.distanceKm}km / ${track.length} 点${replaced ? '（覆盖）' : ''}`);
+  return { rideId, date, distanceKm, movingTimeSec, replaced };
 }

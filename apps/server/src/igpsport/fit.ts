@@ -1,4 +1,4 @@
-/** FIT 二进制 → GPS 轨迹点（fit-file-parser 已把 semicircles 转成度） */
+/** FIT 二进制 → GPS 轨迹点 + 元信息（fit-file-parser 已把 semicircles 转成度） */
 import FitFileParser from 'fit-file-parser';
 
 export interface TrackPoint {
@@ -8,6 +8,15 @@ export interface TrackPoint {
   hr?: number;
   spd?: number;
   time?: string;
+}
+
+export interface FitMeta {
+  /** 首个记录点时间（ISO） */
+  startTime?: string;
+  /** 累计距离 m（取最后一个非空 distance） */
+  totalDistanceM?: number;
+  maxSpeedKmh?: number;
+  calories?: number;
 }
 
 interface ParsedFit {
@@ -23,9 +32,10 @@ interface ParsedFit {
     cadence?: number;
     power?: number;
   }>;
+  sessions?: Array<{ total_calories?: number; sport?: string }>;
 }
 
-export async function parseFit(buf: Buffer): Promise<TrackPoint[]> {
+export async function parseFit(buf: Buffer): Promise<{ points: TrackPoint[]; meta: FitMeta }> {
   const parser = new FitFileParser({
     mode: 'list',
     speedUnit: 'km/h',
@@ -40,12 +50,18 @@ export async function parseFit(buf: Buffer): Promise<TrackPoint[]> {
       else resolve(parsed);
     });
   });
-  const out: TrackPoint[] = [];
+  const points: TrackPoint[] = [];
+  let totalDistanceM: number | undefined;
+  let maxSpeedKmh: number | undefined;
+  let startTime: string | undefined;
   for (const r of data.records ?? []) {
     const lat = r.position_lat;
     const lng = r.position_long;
+    if (r.distance != null) totalDistanceM = r.distance;
+    if (r.speed != null && (maxSpeedKmh == null || r.speed > maxSpeedKmh)) maxSpeedKmh = r.speed;
+    if (r.timestamp && !startTime) startTime = new Date(r.timestamp as string).toISOString();
     if (lat == null || lng == null) continue;
-    out.push({
+    points.push({
       lat,
       lng,
       alt: (r.enhanced_altitude ?? r.altitude) ?? undefined,
@@ -54,5 +70,6 @@ export async function parseFit(buf: Buffer): Promise<TrackPoint[]> {
       time: r.timestamp ? new Date(r.timestamp as string).toISOString() : undefined,
     });
   }
-  return out;
+  const calories = data.sessions?.[0]?.total_calories;
+  return { points, meta: { startTime, totalDistanceM, maxSpeedKmh, calories } };
 }
