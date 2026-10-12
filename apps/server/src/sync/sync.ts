@@ -14,8 +14,8 @@ const SERIES_V = 3;
 export interface SyncOptions {
   username: string;
   password: string;
-  /** 静态快照输出目录（仓库 data/，供纯静态演示模式使用） */
-  dataDir: string;
+  /** 归属用户（多用户数据隔离） */
+  userId: string;
   /** 每次接口调用的间隔 ms（礼貌限频） */
   intervalMs?: number;
 }
@@ -47,14 +47,14 @@ function buildSeries(points: TrackPoint[]): RideSeriesPoint[] {
 }
 
 export async function runSync(opts: SyncOptions): Promise<SyncSummary> {
-  const { username, password, dataDir, intervalMs = 1100 } = opts;
+  const { username, password, userId, intervalMs = 1100 } = opts;
   openDb();
 
   const keys = await getEdgeKeys();
   const session = await login(keys, username, password);
   const rows = await listAllActivities(keys, session.access_token);
 
-  const versions = getStoredSeriesVersions();
+  const versions = getStoredSeriesVersions(userId);
   let added = 0;
   let skipped = 0;
 
@@ -90,22 +90,18 @@ export async function runSync(opts: SyncOptions): Promise<SyncSummary> {
       track,
       series: buildSeries(points),
       calorie: detail.calorie,
-      maxSpeedKmh: Math.round((detail.maxSpeed ?? 0) * 3.6 * 10) / 10,
+      maxSpeedKmh: Math.round(Number(detail.maxSpeed ?? 0) * 3.6 * 10) / 10,
       province: region.province,
       city: region.city,
     };
-    upsertRide(record, SERIES_V);
-    writeRideSnapshot(dataDir, record);
-    writeSeriesSnapshot(dataDir, record);
+    upsertRide(record, SERIES_V, userId);
     added++;
     console.log(`  + ${record.date} ${record.title}: ${record.distanceKm}km / ${track.length} 点 / ${record.series?.length ?? 0} 序列点`);
   }
 
-  // 重写聚合快照
-  const rides = listRides();
-  writeIndexSnapshot(dataDir, rides);
-  writeClustersSnapshot(dataDir, rides);
-  const totalKm = Math.round(rides.reduce((s, r) => s + r.distanceKm, 0) * 100) / 100;
+  const totalKm = Math.round(
+    listRides(userId).reduce((sum, r) => sum + r.distanceKm, 0) * 100,
+  ) / 100;
   return { fetched: rows.length, added, skipped, totalKm };
 }
 
@@ -195,7 +191,7 @@ export interface IngestSummary {
 }
 
 /** FIT 手动上传入库：解析 → 建记录（rideId 取起点时间，重传即覆盖）→ 快照刷新 */
-export async function ingestFitRide(buf: Buffer, dataDir: string): Promise<IngestSummary> {
+export async function ingestFitRide(buf: Buffer, userId: string): Promise<IngestSummary> {
   openDb();
   const { points, meta } = await parseFit(buf);
   if (points.length < 2) throw new Error('FIT 内没有可用轨迹点');
@@ -246,13 +242,8 @@ export async function ingestFitRide(buf: Buffer, dataDir: string): Promise<Inges
     city: region.city,
   };
 
-  const replaced = listRides().some((r) => r.rideId === rideId);
-  upsertRide(record, SERIES_V);
-  writeRideSnapshot(dataDir, record);
-  writeSeriesSnapshot(dataDir, record);
-  const rides = listRides();
-  writeIndexSnapshot(dataDir, rides);
-  writeClustersSnapshot(dataDir, rides);
+  const replaced = listRides(userId).some((r) => r.rideId === rideId);
+  upsertRide(record, SERIES_V, userId);
   console.log(`  + [FIT导入] ${record.date}: ${record.distanceKm}km / ${track.length} 点${replaced ? '（覆盖）' : ''}`);
   return { rideId, date, distanceKm, movingTimeSec, replaced };
 }

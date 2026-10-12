@@ -348,8 +348,9 @@ export default function RideMap({
       }
 
       // 起点猫爪标记（canvas 现场生成）
-      map.loadImage(pawDataUrl(), (err, image) => {
-        if (err || !image || !map.getSource('tracks') || map.hasImage('paw')) return;
+      map.loadImage(pawDataUrl())
+        .then((image) => {
+        if (!image || !map.getSource('tracks') || map.hasImage('paw')) return;
         map.addImage('paw', image);
         const starts = {
           type: 'FeatureCollection',
@@ -365,7 +366,8 @@ export default function RideMap({
           source: { type: 'geojson', data: starts },
           layout: { 'image': 'paw', 'icon-size': 0.45, 'icon-allow-overlap': true },
         });
-      });
+        })
+        .catch(() => { /* 爪印加载失败不影响主功能 */ });
     } else {
       (map.getSource('tracks') as maplibregl.GeoJSONSource).setData(fc);
       if (map.getLayer('track-glow')) map.setPaintProperty('track-glow', 'line-color', C.track);
@@ -571,10 +573,11 @@ function ensureReplayLayers(map: maplibregl.Map, theme: TrailTheme): maplibregl.
   return map.getSource('replay-line') as maplibregl.GeoJSONSource | null;
 }
 
-function flyToBounds(map: maplibregl.Map, features: TrackFC['features'][]) {
+function flyToBounds(map: maplibregl.Map, features: TrackFC['features'] | TrackFC['features'][]) {
   const b = new maplibregl.LngLatBounds();
   let n = 0;
-  for (const f of features) {
+  const list = (features as TrackFC['features'][][]).flat();
+  for (const f of list) {
     for (const c of f.geometry.coordinates) {
       b.extend(c);
       n++;

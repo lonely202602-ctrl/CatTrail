@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ClustersIndex, RideSeriesPoint, RidesIndex } from '@lonelycat/shared';
-import { fetchClusters, fetchRidesIndex, fetchSeries, fetchTracks, type TrackFC } from './data/adapter';
+import {
+  fetchClusters, fetchRidesIndex, fetchSeries, fetchTracks, getToken, clearToken, fetchMe,
+  DATA_MODE, type TrackFC,
+} from './data/adapter';
+import { AuthPage } from './pages/AuthPage';
 import RideMap from './map/RideMap';
 import type { TrailTheme } from './map/mapStyle';
 import SidePanel from './components/SidePanel';
@@ -31,6 +35,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState<PageKey>('map');
+  const [username, setUsername] = useState<string | null>(null);
+  /** 服务端模式必须登录；静态演示模式免登录 */
+  const [authed, setAuthed] = useState(() => DATA_MODE === 'static' ? true : !!getToken());
 
   // 数据加载（历史/设置页的操作完成后回调刷新，地图/热力图/列表共用一份数据）
   const loadData = useCallback(() => {
@@ -51,7 +58,24 @@ export default function App() {
     localStorage.setItem('cattrail-theme', theme);
   }, [theme]);
 
-  useEffect(loadData, [loadData]);
+  useEffect(() => {
+    if (DATA_MODE === 'static' || !getToken()) return;
+    // 校验本地令牌是否仍有效（无效则清掉进入登录页）
+    fetchMe()
+      .then((me) => {
+        setUsername(me.username);
+        setAuthed(true);
+      })
+      .catch(() => {
+        clearToken();
+        setAuthed(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (DATA_MODE !== 'static' && !authed) return;
+    loadData();
+  }, [loadData, authed]);
 
   // 切页时收起地图抽屉
   useEffect(() => {
@@ -100,6 +124,19 @@ export default function App() {
   useEffect(() => {
     (window as unknown as Record<string, unknown>).__cattrail = { openDetail, startReplay, focusRegion: setFocusRideIds };
   });
+
+  if (DATA_MODE !== 'static' && !authed) {
+    return (
+      <AuthPage
+        theme={theme}
+        onAuthed={(name) => {
+          setUsername(name);
+          setAuthed(true);
+          loadData();
+        }}
+      />
+    );
+  }
 
   return (
     <>
@@ -162,7 +199,7 @@ export default function App() {
 
       {/* 设置页 */}
       <div className={`page page-settings${page === 'settings' ? ' active' : ''}`} aria-hidden={page !== 'settings'}>
-        <SettingsPage onDataChanged={loadData} />
+        <SettingsPage username={username} onDataChanged={loadData} />
       </div>
 
       <NavBar page={page} onChange={setPage} />

@@ -1,9 +1,12 @@
 /** 骑行历史页：年度打卡热力图 + 骑行记录列表 + 居中详情卡片（iGPSPORT 风格） + FIT 手动导入 */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import maplibregl from 'maplibre-gl';
 import type { RideInfo, RideSeriesPoint } from '@lonelycat/shared';
 import type { TrackFC } from '../data/adapter';
 import { DATA_MODE, fetchSeries, uploadFit } from '../data/adapter';
 import { AreaChart } from '../components/ActivityDrawer';
+import { PageDecor } from './AuthPage';
+import { buildStyle, trailPalette } from '../map/mapStyle';
 import { exportGpx, exportShareCard, fmtDuration } from '../lib/export';
 
 const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六'];
@@ -66,11 +69,28 @@ function Heatmap({ rides }: { rides: RideInfo[] }) {
   const width = PAD_L + data.cols * (CELL + GAP) + 8;
   const height = PAD_T + 7 * (CELL + GAP) + 6;
 
+  const best = useMemo(
+    () =>
+      [...data.cells.flat()].reduce(
+        (max, c) => (c && c.km > (max?.km ?? 0) ? c : max),
+        null as { km: number; label: string } | null,
+      ),
+    [data],
+  );
+
   return (
     <div className="heatmap">
       <div className="heatmap__head">
-        <b>{data.totalRides}</b> 次骑行 · 共 <b>{data.totalKm}</b> km
-        <span className="heatmap__range">近一年</span>
+        <span className="heatmap__chip"><b>{data.totalRides}</b> 次骑行</span>
+        <span className="heatmap__chip">共 <b>{data.totalKm}</b> km</span>
+        {best && <span className="heatmap__chip">单日最长 <b>{best.km}</b> km</span>}
+        <span className="heatmap__legend">
+          少
+          {[0, 1, 2, 3, 4].map((l) => (
+            <i key={l} className={`heatmap__cell heatmap__cell--l${l}`} />
+          ))}
+          多
+        </span>
       </div>
       <div className="heatmap__scroll">
         <svg width={width} height={height} className="heatmap__svg" role="img" aria-label="近一年骑行打卡热力图">
@@ -103,39 +123,55 @@ function Heatmap({ rides }: { rides: RideInfo[] }) {
           )}
         </svg>
       </div>
-      <div className="heatmap__legend">
-        少
-        {[0, 1, 2, 3, 4].map((l) => (
-          <i key={l} className={`heatmap__cell heatmap__cell--l${l}`} />
-        ))}
-        多
-      </div>
     </div>
   );
 }
 
 /* ---------------- 居中详情卡片（iGPSPORT 风格：大数字统计 + 曲线 + 轨迹缩略图） ---------------- */
 
-function MiniTrack({ track }: { track: [number, number][] }) {
-  const W = 560;
-  const H = 220;
-  const lats = track.map((c) => c[1]);
-  const lngs = track.map((c) => c[0]);
-  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-  const scale = Math.min((W - 40) / Math.max(maxLng - minLng, 1e-6), (H - 40) / Math.max(maxLat - minLat, 1e-6));
-  const ox = (W - (maxLng - minLng) * scale) / 2;
-  const oy = (H - (maxLat - minLat) * scale) / 2;
-  const d = track
-    .map((c, i) => `${i === 0 ? 'M' : 'L'}${(ox + (c[0] - minLng) * scale).toFixed(1)},${(oy + (maxLat - c[1]) * scale).toFixed(1)}`)
-    .join('');
-  const s = track[0];
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="rdcard__track" role="img" aria-label="轨迹缩略图">
-      <path d={d} fill="none" stroke="var(--cat-orange)" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={ox + (s[0] - minLng) * scale} cy={oy + (maxLat - s[1]) * scale} r="4" fill="#fff" stroke="var(--cat-orange)" strokeWidth="2" />
-    </svg>
-  );
+/** 详情卡片内的真实地图底图缩略图（复用瓦片代理与主题样式，无交互） */
+function TrackMiniMap({ track, theme }: { track: [number, number][]; theme: 'night' | 'day' }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    const map = new maplibregl.Map({
+      container: ref.current,
+      style: buildStyle(theme),
+      interactive: false,
+      attributionControl: false,
+      renderWorldCopies: false,
+      fadeDuration: 0,
+    });
+    map.on('load', () => {
+      if (!map.getSource('ride')) {
+        map.addSource('ride', {
+          type: 'geojson',
+          data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: track } },
+        });
+      }
+      if (!map.getLayer('ride-glow')) {
+        const C = trailPalette(theme);
+        map.addLayer({
+          id: 'ride-glow',
+          type: 'line',
+          source: 'ride',
+          paint: { 'line-color': C.track, 'line-width': 10, 'line-opacity': 0.28, 'line-blur': 4 },
+        });
+        map.addLayer({
+          id: 'ride-line',
+          type: 'line',
+          source: 'ride',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': C.track, 'line-width': 3.5 },
+        });
+      }
+      const b = new maplibregl.LngLatBounds();
+      track.forEach((c) => b.extend(c));
+      map.fitBounds(b, { padding: 42, duration: 0, essential: true });
+    });
+    return () => map.remove();
+  }, [track, theme]);
+  return <div ref={ref} className="rdcard__track rdcard__map" />;
 }
 
 function RideDetailCard({
@@ -186,7 +222,7 @@ function RideDetailCard({
           <div><b>{ride.maxSpeedKmh?.toFixed(1) ?? '—'}</b><span>最高速度 km/h</span></div>
         </div>
 
-        {track.length > 1 && <MiniTrack track={track} />}
+        {track.length > 1 && <TrackMiniMap track={track} theme={theme} />}
 
         <div className="rdcard__charts">
           {speedData.length > 1 && (
@@ -249,6 +285,7 @@ export function HistoryPage({
 
   return (
     <div className="history">
+      <PageDecor />
       <header className="history__head">
         <div>
           <h2>骑行历史</h2>

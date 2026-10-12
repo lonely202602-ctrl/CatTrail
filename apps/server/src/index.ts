@@ -6,7 +6,28 @@ import { openDb, listRides } from './store/db.js';
 import { writeIndexSnapshot } from './sync/sync.js';
 import { buildClusters } from './clusters/cluster.js';
 import { fetchUpstream, rewriteTileJSON, originOf } from './tiles/proxy.js';
-import { readCreds, writeCreds, clearCreds, maskUsername } from './store/credentials.js';
+import { hashPassword, verifyPassword, newToken, newUserId } from './auth.js';
+import {
+  countUsers, createUser, getUserByUsername, getUserById, setSession, getSessionUser, delSession,
+  setIgpCreds, clearIgpCreds, claimOrphanRides,
+} from './store/db.js';
+
+/** 会话鉴权：Authorization: Bearer <token> → userId；失败返回 null（调用方回 401） */
+function authUser(req: import('fastify').FastifyRequest): string | null {
+  const h = req.headers.authorization ?? '';
+  const token = h.startsWith('Bearer ') ? h.slice(7) : '';
+  if (!token) return null;
+  return getSessionUser(token);
+}
+
+function maskUsername(u: string): string {
+  const at = u.indexOf('@');
+  if (at > 0) {
+    const local = u.slice(0, at);
+    return `${local.slice(0, 2)}${'*'.repeat(Math.max(local.length - 2, 2))}${u.slice(at)}`;
+  }
+  return `${u.slice(0, 3)}${'*'.repeat(Math.max(u.length - 3, 2)).slice(0, 6)}`;
+}
 import type { RidesIndex, RideRecord } from '@lonelycat/shared';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -23,24 +44,17 @@ function readStaticData(file: string): string | null {
   return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null;
 }
 
-function ridesOrSeed(): RideRecord[] {
-  const rides = listRides();
-  if (rides.length > 0) return rides;
-  // 数据库为空时回退到静态快照（首次部署/演示模式）
-  const raw = readStaticData('index.json');
-  if (!raw) return [];
-  const index = JSON.parse(raw) as RidesIndex;
-  return index.rides.map((info) => {
-    const fc = JSON.parse(readStaticData(`rides/${info.rideId}.geojson`) ?? '{}');
-    return { ...info, fitUrl: '', track: fc.geometry?.coordinates ?? [] } as RideRecord;
-  });
+function ridesOrSeed(userId: string): RideRecord[] {
+  return listRides(userId);
 }
 
 app.get('/api/health', async () => ({ ok: true, ts: Date.now() }));
 
-/** 骑行列表（与 data/index.json 同构） */
-app.get('/api/activities', async () => {
-  const rides = ridesOrSeed();
+/** 骑行列表（与 data/index.json 同构；按用户隔离，含公开演示数据） */
+app.get('/api/activities', async (req, reply) => {
+  const uid = authUser(req);
+  if (!uid) return reply.code(401).send({ error: '未登录' });
+  const rides = ridesOrSeed(uid);
   const index: RidesIndex = {
     generatedAt: new Date().toISOString(),
     totalKm: Math.round(rides.reduce((s, r) => s + r.distanceKm, 0) * 100) / 100,
@@ -50,9 +64,11 @@ app.get('/api/activities', async () => {
   return index;
 });
 
-/** 全部轨迹 FeatureCollection（与 data/tracks.json 同构） */
-app.get('/api/tracks', async () => {
-  const rides = ridesOrSeed();
+/** 全部轨迹 FeatureCollection（与 data/tracks.json 同构；按用户隔离） */
+app.get('/api/tracks', async (req, reply) => {
+  const uid = authUser(req);
+  if (!uid) return reply.code(401).send({ error: '未登录' });
+  const rides = ridesOrSeed(uid);
   return {
     type: 'FeatureCollection',
     features: rides.map((r) => ({
@@ -72,20 +88,21 @@ app.get('/api/tracks', async () => {
   };
 });
 
-/** 猫径：相似线路聚类（实时计算，与 data/clusters.json 同构） */
-app.get('/api/clusters', async () => buildClusters(ridesOrSeed()));
+/** 猫径：相似线路聚类（实时计算，与 data/clusters.json 同构；按用户隔离） */
+app.get('/api/clusters', async (req, reply) => {
+  const uid = authUser(req);
+  if (!uid) return reply.code(401).send({ error: '未登录' });
+  return buildClusters(ridesOrSeed(uid));
+});
 
 /** 逐秒序列（轨迹分析抽屉用；数据库优先，回退静态快照） */
 app.get('/api/series/:rideId', async (req, reply) => {
+  const uid = authUser(req);
+  if (!uid) return reply.code(401).send({ error: '未登录' });
   const rideId = Number((req.params as { rideId: string }).rideId);
   if (!Number.isFinite(rideId)) return reply.code(400).send({ error: 'bad rideId' });
-  const ride = listRides().find((r) => r.rideId === rideId);
+  const ride = listRides(uid).find((r) => r.rideId === rideId);
   if (ride?.series) return { rideId, series: ride.series };
-  const raw = readStaticData(`series/${rideId}.json`);
-  if (raw) {
-    reply.header('content-type', 'application/json; charset=utf-8');
-    return raw;
-  }
   return reply.code(404).send({ error: 'not found' });
 });
 
@@ -123,62 +140,115 @@ app.get('/tiles/*', async (req, reply) => {
   }
 });
 
-/** 触发同步（凭据优先用页面绑定的账号，回退服务端环境变量） */
+/** 触发同步（凭据用当前用户绑定的 iGPSPORT 账号） */
 app.post('/api/sync', async (req, reply) => {
-  const token = process.env.SYNC_TOKEN;
-  if (token && req.headers['x-sync-token'] !== token) {
-    return reply.code(401).send({ error: 'unauthorized' });
+  const uid = authUser(req);
+  if (!uid) return reply.code(401).send({ error: '未登录' });
+  const user = getUserById(uid);
+  if (!user?.igp_u || !user?.igp_p) {
+    return reply.code(400).send({ error: '未绑定 iGPSPORT 账号，请先在设置页绑定' });
   }
-  const stored = readCreds();
-  const username = stored?.username ?? process.env.IGPSPORT_USERNAME;
-  const password = stored?.password ?? process.env.IGPSPORT_PASSWORD;
-  if (!username || !password) return reply.code(400).send({ error: '未绑定 iGPSPORT 账号，请先在设置页绑定' });
   try {
     const { runSync } = await import('./sync/sync.js');
-    const summary = await runSync({ username, password, dataDir: DATA_DIR });
+    const summary = await runSync({ username: user.igp_u, password: user.igp_p, userId: uid });
     return { ok: true, ...summary };
   } catch (e) {
     return reply.code(502).send({ error: String((e as Error).message ?? e) });
   }
 });
 
-/** iGPSPORT 账号绑定状态（密码永不回传，只回脱敏用户名） */
-app.get('/api/settings/igpsport', async () => {
-  const stored = readCreds();
-  if (stored) return { bound: true, source: 'stored', username: maskUsername(stored.username) };
-  if (process.env.IGPSPORT_USERNAME) {
-    return { bound: true, source: 'env', username: maskUsername(process.env.IGPSPORT_USERNAME) };
+/** iGPSPORT 账号绑定状态（绑定在当前用户名下，密码永不回传） */
+app.get('/api/settings/igpsport', async (req, reply) => {
+  const uid = authUser(req);
+  if (!uid) return reply.code(401).send({ error: '未登录' });
+  const user = getUserById(uid);
+  if (user?.igp_u && user?.igp_p) {
+    return { bound: true, source: 'stored', username: maskUsername(user.igp_u) };
   }
   return { bound: false, source: 'none', username: null };
 });
 
-/** 绑定/换绑：凭据写入自部署服务器本地（.cache/igpsport-auth.json，不入仓库） */
+/** 绑定/换绑：凭据绑定在当前用户名下（服务器数据库，不入仓库） */
 app.post('/api/settings/igpsport', async (req, reply) => {
+  const uid = authUser(req);
+  if (!uid) return reply.code(401).send({ error: '未登录' });
   const { username, password } = (req.body ?? {}) as { username?: string; password?: string };
   if (!username || !password) return reply.code(400).send({ error: '需要 username 与 password' });
-  writeCreds(username, password);
+  setIgpCreds(uid, username, password);
   return { ok: true, source: 'stored', username: maskUsername(username) };
 });
 
 /** 解绑 */
-app.delete('/api/settings/igpsport', async () => {
-  clearCreds();
+app.delete('/api/settings/igpsport', async (req, reply) => {
+  const uid = authUser(req);
+  if (!uid) return reply.code(401).send({ error: '未登录' });
+  clearIgpCreds(uid);
   return { ok: true };
 });
 
-/** FIT 手动上传：解析 → 入库 → 快照刷新（rideId 取起点时间，同一次骑行重传即覆盖） */
+/** FIT 手动上传：解析 → 入库（归属当前用户）→ rideId 取起点时间，重传即覆盖 */
 app.post('/api/activities/fit', async (req, reply) => {
+  const uid = authUser(req);
+  if (!uid) return reply.code(401).send({ error: '未登录' });
   const buf = req.body as Buffer;
   if (!Buffer.isBuffer(buf) || buf.length === 0) {
     return reply.code(400).send({ error: '需要二进制 FIT 文件体（application/octet-stream）' });
   }
   try {
     const { ingestFitRide } = await import('./sync/sync.js');
-    const summary = await ingestFitRide(buf, DATA_DIR);
+    const summary = await ingestFitRide(buf, uid);
     return { ok: true, ...summary };
   } catch (e) {
     return reply.code(400).send({ error: String((e as Error).message ?? e) });
   }
+});
+
+/* ---------- 认证：注册 / 登录 / 登出 / 当前用户 ---------- */
+
+app.post('/api/auth/register', async (req, reply) => {
+  const { username, password } = (req.body ?? {}) as { username?: string; password?: string };
+  if (!username || username.length < 2 || username.length > 32) {
+    return reply.code(400).send({ error: '用户名需 2-32 个字符' });
+  }
+  if (!password || password.length < 6) {
+    return reply.code(400).send({ error: '密码至少 6 位' });
+  }
+  if (getUserByUsername(username)) {
+    return reply.code(409).send({ error: '用户名已被占用' });
+  }
+  const firstUser = countUsers() === 0;
+  const userId = newUserId();
+  createUser(userId, username, hashPassword(password));
+  // 首个注册用户认领存量骑行数据（此前服务是单用户形态）
+  if (firstUser) claimOrphanRides(userId);
+  const token = newToken();
+  setSession(token, userId);
+  return { ok: true, token, username, firstUser };
+});
+
+app.post('/api/auth/login', async (req, reply) => {
+  const { username, password } = (req.body ?? {}) as { username?: string; password?: string };
+  const user = username ? getUserByUsername(username) : undefined;
+  if (!user || !password || !verifyPassword(password, user.pass_hash)) {
+    return reply.code(401).send({ error: '用户名或密码错误' });
+  }
+  const token = newToken();
+  setSession(token, user.user_id);
+  return { ok: true, token, username: user.username };
+});
+
+app.post('/api/auth/logout', async (req, reply) => {
+  const h = req.headers.authorization ?? '';
+  const token = h.startsWith('Bearer ') ? h.slice(7) : '';
+  if (token) delSession(token);
+  return { ok: true };
+});
+
+app.get('/api/auth/me', async (req, reply) => {
+  const uid = authUser(req);
+  if (!uid) return reply.code(401).send({ error: '未登录' });
+  const user = getUserById(uid);
+  return { ok: true, username: user?.username ?? uid };
 });
 
 app.listen({ port: PORT, host: '127.0.0.1' }).then(() => {

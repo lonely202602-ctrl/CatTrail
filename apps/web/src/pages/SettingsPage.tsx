@@ -1,14 +1,21 @@
-/** 设置页：iGPSPORT 账号绑定/换绑/解绑 + 手动同步触发 */
+/** 设置页：iGPSPORT 账号绑定/换绑/解绑 + 手动同步触发 + 退出登录 */
 import { useEffect, useState } from 'react';
 import {
-  clearIgpsportSettings, fetchIgpsportSettings, saveIgpsportSettings, triggerSync,
+  clearIgpsportSettings, clearToken, fetchIgpsportSettings, saveIgpsportSettings, triggerSync,
   type IgpsportSettings, type SyncResult,
 } from '../data/adapter';
+import { PageDecor } from './AuthPage';
 
-export function SettingsPage({ onDataChanged }: { onDataChanged: () => void }) {
+export function SettingsPage({
+  username,
+  onDataChanged,
+}: {
+  username: string | null;
+  onDataChanged: () => void;
+}) {
   const [status, setStatus] = useState<IgpsportSettings | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [username, setUsername] = useState('');
+  const [igpUser, setIgpUser] = useState('');
   const [password, setPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -22,14 +29,14 @@ export function SettingsPage({ onDataChanged }: { onDataChanged: () => void }) {
   useEffect(load, []);
 
   const bind = async () => {
-    if (!username.trim() || !password.trim()) {
+    if (!igpUser.trim() || !password.trim()) {
       setMsg({ ok: false, text: '请填写账号与密码' });
       return;
     }
     setSaving(true);
     setMsg(null);
     try {
-      const s = await saveIgpsportSettings(username.trim(), password);
+      const s = await saveIgpsportSettings(igpUser.trim(), password);
       setStatus(s);
       setPassword('');
       setMsg({ ok: true, text: `已绑定 ${s.username}，可以去「立即同步」拉取骑行数据了` });
@@ -69,9 +76,12 @@ export function SettingsPage({ onDataChanged }: { onDataChanged: () => void }) {
 
   return (
     <div className="settings">
+      <PageDecor />
       <header className="settings__head">
         <h2>设置</h2>
-        <p className="settings__sub">绑定码表账号后，骑行数据会自动同步进猫踪</p>
+        <p className="settings__sub">
+          {username ? `喵，${username}！` : ''}绑定码表账号后，骑行数据会自动同步进猫踪
+        </p>
       </header>
 
       <section className="card">
@@ -89,8 +99,8 @@ export function SettingsPage({ onDataChanged }: { onDataChanged: () => void }) {
         <label className="field">
           <span>账号（手机号 / 邮箱）</span>
           <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            value={igpUser}
+            onChange={(e) => setIgpUser(e.target.value)}
             placeholder="iGPSPORT App 的登录账号"
             autoComplete="username"
           />
@@ -109,7 +119,7 @@ export function SettingsPage({ onDataChanged }: { onDataChanged: () => void }) {
         {msg && <div className={`settings__msg ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}
 
         <div className="settings__row">
-          <button className="btn-primary" disabled={saving || !username.trim() || !password.trim()} onClick={bind}>
+          <button className="btn-primary" disabled={saving || !igpUser.trim() || !password.trim()} onClick={bind}>
             {saving ? '绑定中…' : bound ? '换绑' : '绑定'}
           </button>
           {bound && status?.source === 'stored' && (
@@ -146,6 +156,25 @@ export function SettingsPage({ onDataChanged }: { onDataChanged: () => void }) {
           没绑账号也能用：把码表导出的 .fit 文件拖到「骑行历史」页右上角的导入框即可入库
           （rideId 取起点时间，同一次骑行重传自动覆盖）。
         </p>
+      </section>
+
+      <section className="card">
+        <div className="card__head">
+          <span className="card__title">账号</span>
+          {username && <span className="card__badge ok">{username}</span>}
+        </div>
+        <p className="settings__desc">骑行数据按账号隔离，只有登录你自己账号才能看到。</p>
+        <div className="settings__row">
+          <button
+            className="btn-ghost"
+            onClick={async () => {
+              await clearToken();
+              window.location.reload();
+            }}
+          >
+            退出登录
+          </button>
+        </div>
       </section>
     </div>
   );

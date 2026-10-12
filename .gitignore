@@ -30,3 +30,11 @@ coros-mcp-test/
 *.db
 .cache/
 scripts/depth-map.txt
+
+# 用户真实骑行数据（不入库；仅演示数据提交）
+data/rides/*
+!data/rides/990000001.geojson
+!data/rides/990000002.geojson
+data/series/*
+!data/series/990000001.json
+!data/series/990000002.json

@@ -1,7 +1,7 @@
 /** 示例数据种子：生成外地城市的合成骑行（演示全国视图/定位/多主题效果） */
 import path from 'node:path';
 import type { RideRecord, RideSeriesPoint } from '@lonelycat/shared';
-import { openDb, upsertRide, listRides } from './store/db.js';
+import { openDb, upsertRide, listPublicRides } from './store/db.js';
 import { writeIndexSnapshot, writeClustersSnapshot, writeSeriesSnapshot } from './sync/sync.js';
 import { resolveRegion } from './geo/region.js';
 
@@ -79,11 +79,11 @@ async function main() {
       province: region.province,
       city: region.city,
     };
-    upsertRide(ride, 3);
+    upsertRide(ride, 3, null);
     writeSeriesSnapshot(dataDir, ride);
     console.log(`+ ${spec.title}: ${ride.distanceKm}km @ ${region.province} ${region.city}`);
   }
-  const rides = listRides();
+  const rides = listPublicRides();
   writeIndexSnapshot(dataDir, rides);
   writeClustersSnapshot(dataDir, rides);
   console.log(`示例数据完成，当前总计 ${rides.length} 条骑行`);

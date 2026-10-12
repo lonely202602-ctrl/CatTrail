@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-10-11T07:42:35.489Z",
-  "totalKm": 204.32,
-  "totalAscentM": 359,
+  "generatedAt": "2026-10-12T07:41:14.610Z",
+  "totalKm": 63.12,
+  "totalAscentM": 119,
   "rides": [
     {
       "rideId": 990000002,
@@ -30,48 +30,6 @@
       "maxSpeedKmh": 27.2,
       "province": "北京市",
       "city": "朝阳区"
-    },
-    {
-      "rideId": 56284695,
-      "title": "户外骑行",
-      "date": "2026-09-12 13:55:13",
-      "distanceKm": 52.34,
-      "movingTimeSec": 9569,
-      "ascentM": 119,
-      "avgSpeedKmh": 19.7,
-      "device": "BSC200S",
-      "calorie": 1102,
-      "maxSpeedKmh": 35,
-      "province": "广东省",
-      "city": "广州市"
-    },
-    {
-      "rideId": 56270143,
-      "title": "户外骑行",
-      "date": "2026-08-29 15:55:39",
-      "distanceKm": 50.22,
-      "movingTimeSec": 9215,
-      "ascentM": 61,
-      "avgSpeedKmh": 19.6,
-      "device": "BSC200S",
-      "calorie": 1068,
-      "maxSpeedKmh": 32.8,
-      "province": "广东省",
-      "city": "广州市"
-    },
-    {
-      "rideId": 54565197,
-      "title": "户外骑行",
-      "date": "2026-08-15 15:26:09",
-      "distanceKm": 38.64,
-      "movingTimeSec": 7027,
-      "ascentM": 60,
-      "avgSpeedKmh": 19.8,
-      "device": "BSC200S",
-      "calorie": 859,
-      "maxSpeedKmh": 33.5,
-      "province": "广东省",
-      "city": "广州市"
     }
   ]
 }

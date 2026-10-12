@@ -1,16 +1,4 @@
 {
-  "generatedAt": "2026-10-11T07:42:35.501Z",
-  "clusters": [
-    {
-      "id": "paw-1",
-      "rideIds": [
-        56270143,
-        56284695
-      ],
-      "count": 2,
-      "bestRideId": 56284695,
-      "bestAvgSpeedKmh": 19.7,
-      "totalKm": 102.6
-    }
-  ]
+  "generatedAt": "2026-10-12T07:41:14.614Z",
+  "clusters": []
 }
