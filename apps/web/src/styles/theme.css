@@ -999,6 +999,38 @@ body {
 .rdcard__delete { margin-right: 42px; }
 
 /* 透明底 logo：夜巡深色场景补浅色衬底保证黑猫可读（晨巡保持全透明） */
+
+/* 导航栏：logo + 滑动激活指示器 */
+.navbar__logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  margin: 0 2px 0 8px;
+  box-shadow: 0 3px 10px var(--track-glow);
+}
+.navbar__sep {
+  width: 1px;
+  height: 22px;
+  background: var(--line);
+  margin: 0 6px;
+}
+.navbar__tabs { position: relative; display: flex; gap: 4px; }
+.navbar__thumb {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--cat-orange), color-mix(in srgb, var(--cat-orange) 70%, var(--cat-amber)));
+  box-shadow: 0 4px 16px var(--track-glow);
+  transition: transform 0.34s cubic-bezier(0.3, 0.9, 0.3, 1.05), width 0.34s cubic-bezier(0.3, 0.9, 0.3, 1.05);
+}
+.navbar__item { position: relative; z-index: 1; }
+.navbar__item.active {
+  background: transparent;
+  box-shadow: none;
+}
+
 :root[data-theme='night'] .navbar__logo,
 :root[data-theme='night'] .authcard__logo,
 :root[data-theme='night'] .brand-logo {
