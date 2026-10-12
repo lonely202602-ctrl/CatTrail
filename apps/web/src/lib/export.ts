@@ -125,7 +125,7 @@ export async function exportShareCard(ride: RideInfo, track: [number, number][],
   ctx.fillStyle = '#ffffff';
   ctx.fill();
 
-  // 品牌：正式 logo 徽章 + 字标
+  // 品牌：正式 logo 徽章 + 字标（独立一行，与下方标题留足间距防堆叠）
   const logo = await loadLogo();
   const badge = (x: number, y: number, size: number) => {
     ctx.fillStyle = night ? '#f4f1e8' : '#ffffff';
@@ -133,18 +133,18 @@ export async function exportShareCard(ride: RideInfo, track: [number, number][],
     ctx.fill();
     if (logo) ctx.drawImage(logo, x + size * 0.1, y + size * 0.1, size * 0.8, size * 0.8);
   };
-  badge(60, 44, 56);
+  badge(60, 42, 52);
   ctx.fillStyle = ink1;
-  ctx.font = '700 30px "PingFang SC", "Microsoft YaHei", sans-serif';
-  ctx.fillText('猫踪 CatTrail', 130, 82);
+  ctx.font = '700 28px "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillText('猫踪 CatTrail', 126, 76);
 
   ctx.fillStyle = ink1;
-  ctx.font = '700 52px "PingFang SC", "Microsoft YaHei", sans-serif';
-  ctx.fillText(`${ride.title} · ${ride.distanceKm.toFixed(1)} km`, 60, 112);
+  ctx.font = '700 50px "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillText(`${ride.title} · ${ride.distanceKm.toFixed(1)} km`, 60, 154);
 
   ctx.fillStyle = ink2;
   ctx.font = '24px "PingFang SC", "Microsoft YaHei", sans-serif';
-  ctx.fillText(`${ride.date}  ·  ${ride.device}${ride.city ? '  ·  ' + ride.city : ''}`, 60, 164);
+  ctx.fillText(`${ride.date}  ·  ${ride.device}${ride.city ? '  ·  ' + ride.city : ''}`, 60, 194);
 
   // 数据条
   const stats: Array<[string, string]> = [

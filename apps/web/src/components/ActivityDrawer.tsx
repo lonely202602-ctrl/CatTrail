@@ -77,7 +77,7 @@ export default function ActivityDrawer({ ride, series, theme, track, onToggleRep
 }
 
 /** 手写 SVG 面积图：渐变填充 + 悬停十字线 + 回放指针（指针独立订阅 store，不拖累图表渲染） */
-const AreaChart = memo(function AreaChart({
+export const AreaChart = memo(function AreaChart({
   data, tMax, colors, axis, title, unit, height, replayActive,
 }: {
   data: { x: number; y: number }[];

@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ClustersIndex, RideSeriesPoint, RidesIndex } from '@lonelycat/shared';
 import { fetchClusters, fetchRidesIndex, fetchSeries, fetchTracks, type TrackFC } from './data/adapter';
 import RideMap from './map/RideMap';
 import type { TrailTheme } from './map/mapStyle';
 import SidePanel from './components/SidePanel';
 import ActivityDrawer from './components/ActivityDrawer';
+import { NavBar, type PageKey } from './components/NavBar';
+import { HistoryPage } from './pages/HistoryPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 type Theme = TrailTheme;
 
@@ -27,12 +30,33 @@ export default function App() {
   const [seriesCache, setSeriesCache] = useState<Record<number, RideSeriesPoint[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState<PageKey>('map');
 
-  // 切换主题：UI 整体快速淡出 → 换肤 → 淡入（纯 opacity 合成器动画，零卡顿）
+  // 数据加载（历史/设置页的操作完成后回调刷新，地图/热力图/列表共用一份数据）
+  const loadData = useCallback(() => {
+    Promise.all([fetchRidesIndex(), fetchTracks(), fetchClusters()])
+      .then(([idx, fc, cls]) => {
+        setIndex(idx);
+        setTracks(fc);
+        setClusters(cls.clusters);
+        const latest = fc.features.at(-1)?.properties.rideId ?? null;
+        setSelectedId(latest);
+      })
+      .catch((e) => setError(String((e as Error).message ?? e)))
+      .finally(() => setTimeout(() => setLoading(false), 400));
+  }, []);
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('cattrail-theme', theme);
   }, [theme]);
+
+  useEffect(loadData, [loadData]);
+
+  // 切页时收起地图抽屉
+  useEffect(() => {
+    if (page !== 'map') setDetailId(null);
+  }, [page]);
 
   const toggleTheme = () => {
     const root = document.documentElement;
@@ -44,19 +68,6 @@ export default function App() {
       setTimeout(() => root.classList.remove('theme-fading'), 480);
     }, 260);
   };
-
-  useEffect(() => {
-    Promise.all([fetchRidesIndex(), fetchTracks(), fetchClusters()])
-      .then(([idx, fc, cls]) => {
-        setIndex(idx);
-        setTracks(fc);
-        setClusters(cls.clusters);
-        const latest = fc.features.at(-1)?.properties.rideId ?? null;
-        if (latest != null) setSelectedId(latest);
-      })
-      .catch((e) => setError(String((e as Error).message ?? e)))
-      .finally(() => setTimeout(() => setLoading(false), 400));
-  }, []);
 
   // 打开抽屉时按需拉取逐秒序列
   const openDetail = (rideId: number) => {
@@ -75,7 +86,7 @@ export default function App() {
 
   const startReplay = (rideId: number) => {
     // 再次点击 = 停止；回放期间抽屉保持打开，图表指针与地图光点同步
-    // 进度由 RideMap 内部 RAF 驱动并写入 replayStore（避免高频 React 重渲染）
+    // 进度由 RideMap 内部定时器驱动并写入 replayStore（避免高频 React 重渲染）
     setReplayRide((r) => (r === rideId ? null : rideId));
   };
 
@@ -92,49 +103,69 @@ export default function App() {
 
   return (
     <>
-      <RideMap
-        tracks={tracks}
-        clusters={clusters}
-        theme={theme}
-        selectedId={selectedId}
-        selectedClusterId={selectedClusterId}
-        focusRideIds={focusRideIds}
-        replayRideId={replayRide}
-        onReplayEnd={() => setReplayRide(null)}
-        focusRideId={replayRide ?? detailId}
-        focusIsReplay={replayRide != null}
-        onSelect={(id) => {
-          setSelectedId(id);
-          setSelectedClusterId(null);
-        }}
-        onSelectCluster={(id) => {
-          setSelectedClusterId(id || null);
-          setSelectedId(null);
-        }}
-        onOpenDetail={openDetail}
-      />
+      {/* 地图页（切页不卸载，保留地图状态） */}
+      <div className={`page page-map${page === 'map' ? ' active' : ''}`} aria-hidden={page !== 'map'}>
+        <RideMap
+          tracks={tracks}
+          clusters={clusters}
+          theme={theme}
+          selectedId={selectedId}
+          selectedClusterId={selectedClusterId}
+          focusRideIds={focusRideIds}
+          replayRideId={replayRide}
+          onReplayEnd={() => setReplayRide(null)}
+          focusRideId={replayRide ?? detailId}
+          focusIsReplay={replayRide != null}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setSelectedClusterId(null);
+          }}
+          onSelectCluster={(id) => {
+            setSelectedClusterId(id || null);
+            setSelectedId(null);
+          }}
+          onOpenDetail={openDetail}
+        />
 
-      <SidePanel
-        rides={rides}
-        clusters={clusters}
-        totalKm={index?.totalKm ?? 0}
-        totalAscentM={index?.totalAscentM ?? 0}
-        selectedId={selectedId}
-        selectedClusterId={selectedClusterId}
-        onSelect={(id) => {
-          setSelectedId(id);
-          setSelectedClusterId(null);
-        }}
-        onSelectCluster={(id) => {
-          setSelectedClusterId(id);
-          setSelectedId(null);
-        }}
-        onFocusRegion={(ids) => {
-          setFocusRideIds(ids);
-          setSelectedId(null);
-          setSelectedClusterId(null);
-        }}
-      />
+        <SidePanel
+          rides={rides}
+          clusters={clusters}
+          totalKm={index?.totalKm ?? 0}
+          totalAscentM={index?.totalAscentM ?? 0}
+          selectedId={selectedId}
+          selectedClusterId={selectedClusterId}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setSelectedClusterId(null);
+          }}
+          onSelectCluster={(id) => {
+            setSelectedClusterId(id);
+            setSelectedId(null);
+          }}
+          onFocusRegion={(ids) => {
+            setFocusRideIds(ids);
+            setSelectedId(null);
+            setSelectedClusterId(null);
+          }}
+        />
+      </div>
+
+      {/* 骑行历史页 */}
+      <div className={`page page-history${page === 'history' ? ' active' : ''}`} aria-hidden={page !== 'history'}>
+        <HistoryPage
+          rides={rides}
+          tracks={tracks}
+          theme={theme}
+          onDataChanged={loadData}
+        />
+      </div>
+
+      {/* 设置页 */}
+      <div className={`page page-settings${page === 'settings' ? ' active' : ''}`} aria-hidden={page !== 'settings'}>
+        <SettingsPage onDataChanged={loadData} />
+      </div>
+
+      <NavBar page={page} onChange={setPage} />
 
       <button
         className="theme-toggle"
@@ -150,7 +181,7 @@ export default function App() {
           series={seriesCache[detailId] ?? []}
           theme={theme}
           track={detailTrack ?? []}
-            onToggleReplay={() => detailId != null && startReplay(detailId)}
+          onToggleReplay={() => detailId != null && startReplay(detailId)}
           onClose={() => setDetailId(null)}
         />
       )}

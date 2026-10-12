@@ -1,0 +1,152 @@
+/** 设置页：iGPSPORT 账号绑定/换绑/解绑 + 手动同步触发 */
+import { useEffect, useState } from 'react';
+import {
+  clearIgpsportSettings, fetchIgpsportSettings, saveIgpsportSettings, triggerSync,
+  type IgpsportSettings, type SyncResult,
+} from '../data/adapter';
+
+export function SettingsPage({ onDataChanged }: { onDataChanged: () => void }) {
+  const [status, setStatus] = useState<IgpsportSettings | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const load = () => {
+    fetchIgpsportSettings().then(setStatus).catch((e) => setLoadErr(String((e as Error).message)));
+  };
+  useEffect(load, []);
+
+  const bind = async () => {
+    if (!username.trim() || !password.trim()) {
+      setMsg({ ok: false, text: '请填写账号与密码' });
+      return;
+    }
+    setSaving(true);
+    setMsg(null);
+    try {
+      const s = await saveIgpsportSettings(username.trim(), password);
+      setStatus(s);
+      setPassword('');
+      setMsg({ ok: true, text: `已绑定 ${s.username}，可以去「立即同步」拉取骑行数据了` });
+    } catch (e) {
+      setMsg({ ok: false, text: String((e as Error).message) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const unbind = async () => {
+    if (!window.confirm('确定解绑当前 iGPSPORT 账号？解绑后「在线同步」将不可用（已入库数据不受影响）。')) return;
+    try {
+      await clearIgpsportSettings();
+      load();
+      setMsg({ ok: true, text: '已解绑' });
+    } catch (e) {
+      setMsg({ ok: false, text: String((e as Error).message) });
+    }
+  };
+
+  const sync = async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const r: SyncResult = await triggerSync();
+      setSyncMsg({ ok: true, text: `同步完成：拉取 ${r.fetched} 条，新增 ${r.added}，跳过 ${r.skipped}，总里程 ${r.totalKm} km` });
+      onDataChanged();
+    } catch (e) {
+      setSyncMsg({ ok: false, text: String((e as Error).message) });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const bound = status?.bound ?? false;
+
+  return (
+    <div className="settings">
+      <header className="settings__head">
+        <h2>设置</h2>
+        <p className="settings__sub">绑定码表账号后，骑行数据会自动同步进猫踪</p>
+      </header>
+
+      <section className="card">
+        <div className="card__head">
+          <span className="card__title">iGPSPORT 账号</span>
+          {status && (
+            <span className={`card__badge ${bound ? 'ok' : 'off'}`}>
+              {bound ? `已绑定 · ${status.username}` : '未绑定'}
+            </span>
+          )}
+        </div>
+
+        {loadErr && <div className="settings__msg err">{loadErr}</div>}
+
+        <label className="field">
+          <span>账号（手机号 / 邮箱）</span>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="iGPSPORT App 的登录账号"
+            autoComplete="username"
+          />
+        </label>
+        <label className="field">
+          <span>密码</span>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder={bound ? '已绑定；留空则不修改（换绑需重新填写）' : 'iGPSPORT App 的登录密码'}
+            autoComplete="new-password"
+          />
+        </label>
+
+        {msg && <div className={`settings__msg ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}
+
+        <div className="settings__row">
+          <button className="btn-primary" disabled={saving || !username.trim() || !password.trim()} onClick={bind}>
+            {saving ? '绑定中…' : bound ? '换绑' : '绑定'}
+          </button>
+          {bound && status?.source === 'stored' && (
+            <button className="btn-ghost" onClick={unbind}>解绑</button>
+          )}
+        </div>
+        <p className="settings__note">
+          凭据只保存在你自己部署的服务器本地（.cache/igpsport-auth.json，base64 混淆、不入仓库），
+          浏览器不保存密码；同步走 iGPSPORT 官方接口，约 1 秒/条限频。
+        </p>
+      </section>
+
+      <section className="card">
+        <div className="card__head">
+          <span className="card__title">数据同步</span>
+          {bound && <span className="card__badge ok">在线</span>}
+        </div>
+        <p className="settings__desc">
+          从 iGPSPORT 云端拉取全部骑行（增量，已入库的自动跳过），并刷新地图 / 热力图 / 猫径。
+        </p>
+        {syncMsg && <div className={`settings__msg ${syncMsg.ok ? 'ok' : 'err'}`}>{syncMsg.text}</div>}
+        <div className="settings__row">
+          <button className="btn-primary" disabled={!bound || syncing} onClick={sync}>
+            {syncing ? '同步中…（条目多时需要几分钟）' : '⟳ 立即同步'}
+          </button>
+        </div>
+      </section>
+
+      <section className="card">
+        <div className="card__head">
+          <span className="card__title">手动导入</span>
+        </div>
+        <p className="settings__desc">
+          没绑账号也能用：把码表导出的 .fit 文件拖到「骑行历史」页右上角的导入框即可入库
+          （rideId 取起点时间，同一次骑行重传自动覆盖）。
+        </p>
+      </section>
+    </div>
+  );
+}
