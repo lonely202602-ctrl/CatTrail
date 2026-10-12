@@ -1,10 +1,14 @@
 /**
  * 猫踪自定义地图样式 —— OpenFreeMap 免费矢量瓦片（openmaptiles schema）。
  * 夜巡（night）/ 晨巡（day）双主题；地名强制 name:zh（缺失回退 name）。
+ * 瓦片/字体一律走本服务 /tiles/*（后端直连转发），浏览器不直连外网域名。
  */
 import type { StyleSpecification } from 'maplibre-gl';
 
 export type TrailTheme = 'night' | 'day';
+
+/** 同源瓦片代理前缀（style 对象在浏览器构建，location 一定存在） */
+const TILES = `${location.origin}/tiles`;
 
 const COALESCE_ZH = ['coalesce', ['get', 'name:zh'], ['get', 'name']] as unknown as string[];
 
@@ -52,9 +56,9 @@ export function buildStyle(theme: TrailTheme): StyleSpecification {
   const P = PALETTES[theme];
   return {
     version: 8,
-    glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+    glyphs: `${TILES}/fonts/{fontstack}/{range}.pbf`,
     sources: {
-      openmaptiles: { url: 'https://tiles.openfreemap.org/planet', type: 'vector' },
+      openmaptiles: { url: `${TILES}/planet`, type: 'vector' },
     },
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': P.bg } },

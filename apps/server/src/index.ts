@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { openDb, listRides } from './store/db.js';
 import { writeIndexSnapshot } from './sync/sync.js';
 import { buildClusters } from './clusters/cluster.js';
+import { fetchUpstream, rewriteTileJSON, originOf } from './tiles/proxy.js';
 import type { RidesIndex, RideRecord } from '@lonelycat/shared';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -92,6 +93,30 @@ app.get('/data/:file', async (req, reply) => {
   if (raw == null) return reply.code(404).send({ error: 'not found' });
   reply.header('content-type', 'application/json; charset=utf-8');
   return raw;
+});
+
+/** 瓦片直连代理（国内免代理）：/tiles/* → tiles.openfreemap.org/*，磁盘缓存。
+ *  TileJSON（/tiles/planet）会重写瓦片地址到页面同源，浏览器全程不碰外网域名。 */
+app.get('/tiles/*', async (req, reply) => {
+  const rest = (req.params as { '*': string })['*'];
+  // fastify 已对通配参数做 URL 解码（%20 → 空格），字体名含空格属正常；只拦 .. 防目录穿越
+  if (rest.includes('..') || !/^[\w./% +()-]+$/.test(rest)) {
+    return reply.code(400).send({ error: 'bad tile path' });
+  }
+  try {
+    const entry = await fetchUpstream('/' + rest);
+    if (rest === 'planet' && entry.status === 200) {
+      reply.header('content-type', 'application/json; charset=utf-8');
+      return rewriteTileJSON(entry.body.toString('utf8'), originOf(req.headers));
+    }
+    reply
+      .code(entry.status)
+      .header('content-type', entry.contentType)
+      .header('cache-control', 'public, max-age=86400');
+    return entry.body;
+  } catch {
+    return reply.code(504).send({ error: 'tile upstream unreachable' });
+  }
 });
 
 /** 触发同步（凭据在服务端环境变量，浏览器永远接触不到） */

@@ -1,14 +1,14 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// 瓦片缓存 Service Worker：只缓存地图瓦片/字体（openfreemap），不碰业务请求
-const SW_CODE = `const CACHE = 'cattrail-tiles-v1';
-const HOSTS = ['tiles.openfreemap.org'];
+// 瓦片缓存 Service Worker：只缓存同源 /tiles/*（后端直连代理的地图瓦片/字体），不碰业务请求
+const SW_CODE = `const CACHE = 'cattrail-tiles-v2';
 self.addEventListener('install', (e) => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(clients.claim()));
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || !HOSTS.includes(url.hostname)) return;
+  if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
+  if (!url.pathname.startsWith('/tiles/')) return;
   e.respondWith((async () => {
     const c = await caches.open(CACHE);
     const hit = await c.match(e.request);
@@ -49,6 +49,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': 'http://127.0.0.1:8787',
+      '/tiles': 'http://127.0.0.1:8787',
     },
   },
 });
