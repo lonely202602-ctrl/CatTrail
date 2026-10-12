@@ -176,10 +176,12 @@ export default function App() {
           selectedClusterId={selectedClusterId}
           activeRegion={activeRegion}
           onSelect={(id) => {
+            setActiveRegion(null);
             setSelectedId(id);
             setSelectedClusterId(null);
           }}
           onSelectCluster={(id) => {
+            setActiveRegion(null);
             setSelectedClusterId(id);
             setSelectedId(null);
           }}
