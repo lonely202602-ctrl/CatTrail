@@ -35,6 +35,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState<PageKey>('map');
+  const [activeRegion, setActiveRegion] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   /** 服务端模式必须登录；静态演示模式免登录 */
   const [authed, setAuthed] = useState(() => DATA_MODE === 'static' ? true : !!getToken());
@@ -154,10 +155,12 @@ export default function App() {
           focusRideId={replayRide ?? detailId}
           focusIsReplay={replayRide != null}
           onSelect={(id) => {
+            setActiveRegion(null);
             setSelectedId(id);
             setSelectedClusterId(null);
           }}
           onSelectCluster={(id) => {
+            setActiveRegion(null);
             setSelectedClusterId(id || null);
             setSelectedId(null);
           }}
@@ -171,6 +174,7 @@ export default function App() {
           totalAscentM={index?.totalAscentM ?? 0}
           selectedId={selectedId}
           selectedClusterId={selectedClusterId}
+          activeRegion={activeRegion}
           onSelect={(id) => {
             setSelectedId(id);
             setSelectedClusterId(null);
@@ -179,7 +183,8 @@ export default function App() {
             setSelectedClusterId(id);
             setSelectedId(null);
           }}
-          onFocusRegion={(ids) => {
+          onFocusRegion={(key, ids) => {
+            setActiveRegion(key);
             setFocusRideIds(ids);
             setSelectedId(null);
             setSelectedClusterId(null);

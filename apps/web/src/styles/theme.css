@@ -1045,8 +1045,9 @@ body {
 .authpage {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: var(--bg-0);
   z-index: 100;
   overflow: hidden;
@@ -1295,6 +1296,11 @@ body {
   .authform { padding: 34px 30px 28px; }
 }
 
-/* 认证页：爪印水印退场（避免与登录卡争夺视觉焦点） */
-.authpage .pagedecor__paw { display: none; }
-.authpage .pagedecor__blob.b2 { right: -120px; top: auto; bottom: -140px; }
+
+/* 定位区域卡选中态 */
+.region-card.active {
+  border-color: var(--cat-orange);
+  background: rgba(255, 107, 53, 0.1);
+}
+.region-card.active .region-emoji,
+.region-card.active .count-pill { filter: none; }

@@ -120,6 +120,27 @@ export default function RideMap({
     waitStyleReady(map, apply);
   }, [focusRideId, focusIsReplay, theme, tracks, selectedClusterId, clusters]);
 
+  // 定位面板：飞向所选区域并高亮其全部骑行（focusRideIds 为 null = 清除）
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      if (map.getLayer('cluster-hi')) {
+        map.setFilter(
+          'cluster-hi',
+          focusRideIds
+            ? ['in', ['get', 'rideId'], ['literal', focusRideIds]]
+            : ['==', ['get', 'rideId'], -1],
+        );
+      }
+      if (!focusRideIds || !tracks) return;
+      const fs = tracks.features.filter((f) => focusRideIds.includes(f.properties.rideId));
+      if (fs.length > 0) flyToBounds(map, fs);
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once('load', apply);
+  }, [focusRideIds, tracks]);
+
   // 选中骑行 → 平滑飞行
   useEffect(() => {
     const map = mapRef.current;

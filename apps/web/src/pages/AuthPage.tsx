@@ -2,21 +2,13 @@
 import { useState } from 'react';
 import { loginUser, registerUser } from '../data/adapter';
 
-/** 非地图页共用的氛围背景：柔和光斑 + 爪印水印（纯装饰） */
+/** 非地图页共用的氛围背景：柔和光斑（纯装饰） */
 export function PageDecor() {
   return (
     <div className="pagedecor" aria-hidden>
       <i className="pagedecor__blob b1" />
       <i className="pagedecor__blob b2" />
       <i className="pagedecor__blob b3" />
-      <svg className="pagedecor__paw" viewBox="0 0 64 64" width="420" height="420">
-        <g fill="currentColor">
-          <ellipse cx="32" cy="42" rx="13" ry="11" />
-          <ellipse cx="16" cy="24" rx="6.5" ry="7.5" transform="rotate(-14 16 24)" />
-          <ellipse cx="32" cy="17" rx="6.5" ry="7.5" />
-          <ellipse cx="48" cy="24" rx="6.5" ry="7.5" transform="rotate(14 48 24)" />
-        </g>
-      </svg>
     </div>
   );
 }
@@ -166,11 +158,9 @@ export function AuthPage({ theme, onAuthed }: { theme: 'night' | 'day'; onAuthed
             {busy ? '请稍候…' : mode === 'login' ? '登 录' : '注册并进入'}
           </button>
 
-          <p className="authform__note">
-            {mode === 'register'
-              ? '首个注册的账号会认领服务器里已有的历史骑行数据'
-              : '数据按账号隔离，只有你能看到自己的骑行'}
-          </p>
+          {mode === 'register' && (
+            <p className="authform__note">首个注册的账号会认领服务器里已有的历史骑行数据</p>
+          )}
         </div>
       </div>
     </div>

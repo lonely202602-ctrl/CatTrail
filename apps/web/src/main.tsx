@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
-import './styles/theme.css';
+import './styles/theme.css?v=3';
 
 // 启动期错误直接打到页面上（便于无控制台环境排查）
 window.addEventListener('error', (e) => {

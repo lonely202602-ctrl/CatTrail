@@ -8,13 +8,15 @@ interface Props {
   totalAscentM: number;
   selectedId: number | null;
   selectedClusterId: string | null;
+  /** 当前高亮的定位区域 key（'all' 或 '省|市'），null = 无 */
+  activeRegion: string | null;
   onSelect: (id: number) => void;
   onSelectCluster: (id: string) => void;
-  onFocusRegion: (rideIds: number[]) => void;
+  onFocusRegion: (key: string, rideIds: number[]) => void;
 }
 
 export default function SidePanel({
-  rides, clusters, totalKm, totalAscentM, selectedId, selectedClusterId, onSelect, onSelectCluster, onFocusRegion,
+  rides, clusters, totalKm, totalAscentM, selectedId, selectedClusterId, activeRegion, onSelect, onSelectCluster, onFocusRegion,
 }: Props) {
   const ridesRef = useRef<HTMLDivElement>(null);
   const scrollTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -74,7 +76,10 @@ export default function SidePanel({
 
       <div className="regions">
         <div className="rides__title">定 位</div>
-        <div className="region-card" onClick={() => onFocusRegion(rides.map((r) => r.rideId))}>
+        <div
+          className={`region-card${activeRegion === 'all' ? ' active' : ''}`}
+          onClick={() => onFocusRegion('all', rides.map((r) => r.rideId))}
+        >
           <span className="region-emoji">🐾</span>
           <div className="info">
             <div className="name">全国视野</div>
@@ -83,8 +88,14 @@ export default function SidePanel({
           <span className="count-pill">{rides.length}</span>
         </div>
         {regionGroups.map((g) =>
-          g.cities.map((c) => (
-            <div key={`${g.prov}-${c.city}`} className="region-card" onClick={() => onFocusRegion(c.ids)}>
+          g.cities.map((c) => {
+            const key = `${g.prov}|${c.city}`;
+            return (
+            <div
+              key={`${g.prov}-${c.city}`}
+              className={`region-card${activeRegion === key ? ' active' : ''}`}
+              onClick={() => onFocusRegion(key, c.ids)}
+            >
               <span className="region-emoji">📍</span>
               <div className="info">
                 <div className="name">{g.prov}</div>
@@ -92,7 +103,8 @@ export default function SidePanel({
               </div>
               <span className="count-pill">{c.ids.length}</span>
             </div>
-          )),
+            );
+          }),
         )}
       </div>
 
