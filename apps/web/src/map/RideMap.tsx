@@ -137,8 +137,8 @@ export default function RideMap({
       const fs = tracks.features.filter((f) => focusRideIds.includes(f.properties.rideId));
       if (fs.length > 0) flyToBounds(map, fs);
     };
-    if (map.isStyleLoaded()) apply();
-    else map.once('load', apply);
+    // once('load') 陷阱同上：改用轮询门控
+    waitStyleReady(map, apply);
   }, [focusRideIds, tracks]);
 
   // 选中骑行 → 平滑飞行
@@ -162,8 +162,8 @@ export default function RideMap({
         if (fs.length > 0) flyToBounds(map, fs);
       }
     };
-    if (map.isStyleLoaded()) apply();
-    else map.once('load', apply);
+    // once('load') 在 load 已触发后注册永不执行（瓦片加载中必踩），改用轮询门控
+    waitStyleReady(map, apply);
   }, [selectedClusterId, clusters, tracks]);
 
 
