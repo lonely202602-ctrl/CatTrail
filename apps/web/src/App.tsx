@@ -9,7 +9,8 @@ import ActivityDrawer from './components/ActivityDrawer';
 type Theme = TrailTheme;
 
 function initialTheme(): Theme {
-  return (localStorage.getItem('cattrail-theme') as Theme) === 'day' ? 'day' : 'night';
+  // 默认晨巡（白）；用户显式选过夜巡才用夜巡
+  return (localStorage.getItem('cattrail-theme') as Theme) === 'night' ? 'night' : 'day';
 }
 
 export default function App() {
