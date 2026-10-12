@@ -164,9 +164,32 @@ export interface SyncResult {
   totalKm: number;
 }
 
-export async function triggerSync(): Promise<SyncResult> {
+/** 发起同步：立即返回 jobId，后台执行（前端轮询 getJob） */
+export async function startSync(): Promise<{ jobId: string }> {
   requireServer();
   return api('/api/sync', { method: 'POST' });
+}
+
+export interface JobStatus {
+  status: 'running' | 'done' | 'error';
+  result?: SyncResult;
+  error?: string;
+}
+
+export async function getJob(jobId: string): Promise<JobStatus> {
+  return api(`/api/jobs/${jobId}`);
+}
+
+export async function renameRide(rideId: number, title: string): Promise<void> {
+  await api(`/api/rides/${rideId}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+}
+
+export async function deleteRide(rideId: number): Promise<void> {
+  await api(`/api/rides/${rideId}`, { method: 'DELETE' });
 }
 
 export interface FitUploadResult {

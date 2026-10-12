@@ -14,6 +14,8 @@ export interface RideInfo {
   /** 起点所在省/市（同步时离线反查） */
   province?: string;
   city?: string;
+  /** 公开演示数据（内置合成记录，任何登录用户可见，可删除） */
+  demo?: boolean;
 }
 
 /** index.json / GET /api/activities 的结构（静态模式与服务端模式共用同一契约） */

@@ -1,6 +1,7 @@
 /** MapLibre 地图封装：主题化底图 + 渐进描线动画 + 历史小卡片 + 双击打开轨迹分析 */
 import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
+import type { FeatureCollection, Point } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { buildStyle, trailPalette, type TrailTheme } from './mapStyle';
 import type { RouteCluster } from '@lonelycat/shared';
@@ -349,22 +350,23 @@ export default function RideMap({
 
       // 起点猫爪标记（canvas 现场生成）
       map.loadImage(pawDataUrl())
-        .then((image) => {
+        .then((res) => {
+        const image = res.data;
         if (!image || !map.getSource('tracks') || map.hasImage('paw')) return;
         map.addImage('paw', image);
-        const starts = {
+        const starts: FeatureCollection<Point> = {
           type: 'FeatureCollection',
           features: fc.features.map((f) => ({
-            type: 'Feature',
+            type: 'Feature' as const,
             properties: { rideId: f.properties.rideId },
-            geometry: { type: 'Point', coordinates: f.geometry.coordinates[0] },
+            geometry: { type: 'Point' as const, coordinates: f.geometry.coordinates[0] },
           })),
-        } as GeoJSON.FeatureCollection;
+        };
         map.addLayer({
           id: 'start-paw',
           type: 'symbol',
           source: { type: 'geojson', data: starts },
-          layout: { 'image': 'paw', 'icon-size': 0.45, 'icon-allow-overlap': true },
+          layout: { 'icon-image': 'paw', 'icon-size': 0.45, 'icon-allow-overlap': true },
         });
         })
         .catch(() => { /* 爪印加载失败不影响主功能 */ });
@@ -576,7 +578,7 @@ function ensureReplayLayers(map: maplibregl.Map, theme: TrailTheme): maplibregl.
 function flyToBounds(map: maplibregl.Map, features: TrackFC['features'] | TrackFC['features'][]) {
   const b = new maplibregl.LngLatBounds();
   let n = 0;
-  const list = (features as TrackFC['features'][][]).flat();
+  const list = features as unknown as TrackFC['features'];
   for (const f of list) {
     for (const c of f.geometry.coordinates) {
       b.extend(c);

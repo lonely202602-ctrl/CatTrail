@@ -1117,3 +1117,59 @@ body {
 /* 详情卡片真地图底图 */
 .rdcard__map { height: 220px; border: 1px solid var(--line); }
 .rdcard__map .maplibregl-canvas { border-radius: var(--radius); }
+
+/* 详情卡片：改名 / 演示徽标 / 删除 */
+.rdcard__headmain { min-width: 0; flex: 1; }
+.rdcard__titleline { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rdcard__title-editable { cursor: pointer; border-bottom: 1px dashed transparent; transition: border-color 0.18s ease; }
+.rdcard__title-editable:hover { border-bottom-color: var(--cat-orange); }
+.rdcard__titleinput {
+  font-family: var(--font);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink-1);
+  background: var(--bg-2);
+  border: 1px solid var(--cat-orange);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  outline: none;
+  width: 100%;
+  max-width: 320px;
+}
+.rdcard__demobadge {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-3);
+  border: 1px dashed var(--line);
+  white-space: nowrap;
+}
+.rdcard__delete {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.7;
+  transition: color 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
+}
+.rdcard__delete:hover { color: #ff8a8a; border-color: rgba(255, 138, 138, 0.5); opacity: 1; }
+.ride-row__demo {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-3);
+  border: 1px dashed var(--line);
+  margin-left: 6px;
+}
+
+/* 详情卡片：删除按钮让位右上角关闭按钮 */
+.rdcard__delete { margin-right: 42px; }

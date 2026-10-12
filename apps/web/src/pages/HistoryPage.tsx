@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import type { RideInfo, RideSeriesPoint } from '@lonelycat/shared';
 import type { TrackFC } from '../data/adapter';
-import { DATA_MODE, fetchSeries, uploadFit } from '../data/adapter';
+import { DATA_MODE, deleteRide, fetchSeries, renameRide, uploadFit } from '../data/adapter';
 import { AreaChart } from '../components/ActivityDrawer';
 import { PageDecor } from './AuthPage';
 import { buildStyle, trailPalette } from '../map/mapStyle';
@@ -175,13 +175,51 @@ function TrackMiniMap({ track, theme }: { track: [number, number][]; theme: 'nig
 }
 
 function RideDetailCard({
-  ride, track, theme, onClose,
+  ride, track, theme, onClose, onDataChanged,
 }: {
   ride: RideInfo;
   track: [number, number][];
   theme: 'night' | 'day';
   onClose: () => void;
+  onDataChanged: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(ride.title);
+  const [busy, setBusy] = useState(false);
+
+  const saveTitle = async () => {
+    const clean = draft.trim().slice(0, 60);
+    if (!clean || clean === ride.title) {
+      setEditing(false);
+      setDraft(ride.title);
+      return;
+    }
+    setBusy(true);
+    try {
+      await renameRide(ride.rideId, clean);
+      onDataChanged();
+    } catch (e) {
+      window.alert(String((e as Error).message));
+    } finally {
+      setBusy(false);
+      setEditing(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!window.confirm(ride.demo ? '确定删除这条演示数据？删除后所有用户都不再显示。' : `确定删除「${ride.title}」？此操作不可恢复。`)) return;
+    setBusy(true);
+    try {
+      await deleteRide(ride.rideId);
+      onDataChanged();
+      onClose();
+    } catch (e) {
+      window.alert(String((e as Error).message));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const [series, setSeries] = useState<RideSeriesPoint[]>([]);
   const [seriesErr, setSeriesErr] = useState(false);
   useEffect(() => {
@@ -207,10 +245,40 @@ function RideDetailCard({
         <button className="rdcard__close" onClick={onClose} aria-label="关闭">✕</button>
         <div className="rdcard__head">
           <div className="rdcard__icon">🐾</div>
-          <div>
-            <div className="rdcard__title">{ride.title} · {weekday}</div>
+          <div className="rdcard__headmain">
+            <div className="rdcard__titleline">
+              {editing ? (
+                <input
+                  className="rdcard__titleinput"
+                  value={draft}
+                  autoFocus
+                  maxLength={60}
+                  disabled={busy}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveTitle();
+                    if (e.key === 'Escape') setEditing(false);
+                  }}
+                  onBlur={saveTitle}
+                />
+              ) : (
+                <>
+                  <span
+                    className="rdcard__title rdcard__title-editable"
+                    title={ride.demo ? '演示数据不支持改名' : '点击改名'}
+                    onClick={() => !ride.demo && setEditing(true)}
+                  >
+                    {ride.title} · {weekday}
+                  </span>
+                  {ride.demo && <i className="rdcard__demobadge">演示数据</i>}
+                </>
+              )}
+            </div>
             <div className="rdcard__sub">{ride.date} · {ride.device}{ride.city ? ` · ${ride.city}` : ''}</div>
           </div>
+          <button className="rdcard__delete" title={ride.demo ? '删除演示数据' : '删除这条骑行'} disabled={busy} onClick={remove}>
+            🗑
+          </button>
         </div>
 
         <div className="rdcard__stats">
@@ -333,7 +401,10 @@ export function HistoryPage({
                 <i>{Number(r.date.slice(5, 7))}月{wd}</i>
               </span>
               <span className="ride-row__main">
-                <span className="ride-row__title">{r.title}</span>
+                <span className="ride-row__title">
+                  {r.title}
+                  {r.demo && <i className="ride-row__demo">演示</i>}
+                </span>
                 <span className="ride-row__meta">
                   <b>{r.distanceKm.toFixed(1)} km</b> · {fmtDuration(r.movingTimeSec)} · {r.avgSpeedKmh.toFixed(1)} km/h · ↑{r.ascentM}m
                   {r.city ? ` · ${r.city}` : ''}
@@ -346,7 +417,13 @@ export function HistoryPage({
       </div>
 
       {detailRide && (
-        <RideDetailCard ride={detailRide} track={trackOf(detailRide.rideId)} theme={theme} onClose={() => setDetailId(null)} />
+        <RideDetailCard
+          ride={detailRide}
+          track={trackOf(detailRide.rideId)}
+          theme={theme}
+          onDataChanged={onDataChanged}
+          onClose={() => setDetailId(null)}
+        />
       )}
     </div>
   );

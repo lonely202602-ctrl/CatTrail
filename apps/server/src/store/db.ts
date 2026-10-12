@@ -89,13 +89,45 @@ export function getStoredSeriesVersions(userId: string): Map<number, number> {
   );
 }
 
-/** 用户的骑行列表（含公开演示数据：user_id IS NULL） */
+/** 用户的骑行列表（含公开演示数据：user_id IS NULL，带 demo 标记） */
 export function listRides(userId: string): RideRecord[] {
   const d = openDb();
   return d
-    .prepare('SELECT record_json FROM activities WHERE user_id = ? OR user_id IS NULL ORDER BY start_time DESC')
+    .prepare('SELECT record_json, user_id FROM activities WHERE user_id = ? OR user_id IS NULL ORDER BY start_time DESC')
     .all(userId)
-    .map((r) => JSON.parse(r.record_json as string) as RideRecord);
+    .map((r) => {
+      const rec = JSON.parse(r.record_json as string) as RideRecord;
+      if (r.user_id == null) rec.demo = true;
+      return rec;
+    });
+}
+
+/** 读取单条（校验可见性：本人或公开演示） */
+export function getRideRow(
+  rideId: number,
+  userId: string,
+): { record: RideRecord; ownerId: string | null } | undefined {
+  const row = openDb()
+    .prepare('SELECT record_json, user_id FROM activities WHERE ride_id = ? AND (user_id = ? OR user_id IS NULL)')
+    .get(rideId, userId) as { record_json: string; user_id: string | null } | undefined;
+  if (!row) return undefined;
+  return { record: JSON.parse(row.record_json) as RideRecord, ownerId: row.user_id ?? null };
+}
+
+export function deleteRide(rideId: number): void {
+  openDb().prepare('DELETE FROM activities WHERE ride_id = ?').run(rideId);
+}
+
+export function updateRideTitle(rideId: number, title: string): void {
+  const row = openDb().prepare('SELECT record_json FROM activities WHERE ride_id = ?').get(rideId) as
+    | { record_json: string }
+    | undefined;
+  if (!row) return;
+  const rec = JSON.parse(row.record_json) as RideRecord;
+  rec.title = title;
+  openDb()
+    .prepare("UPDATE activities SET title = ?, record_json = ?, updated_at = datetime('now') WHERE ride_id = ?")
+    .run(title, JSON.stringify(rec), rideId);
 }
 
 /** 公开演示数据（user_id IS NULL，供演示快照管线使用） */

@@ -9,7 +9,7 @@ import { fetchUpstream, rewriteTileJSON, originOf } from './tiles/proxy.js';
 import { hashPassword, verifyPassword, newToken, newUserId } from './auth.js';
 import {
   countUsers, createUser, getUserByUsername, getUserById, setSession, getSessionUser, delSession,
-  setIgpCreds, clearIgpCreds, claimOrphanRides,
+  setIgpCreds, clearIgpCreds, claimOrphanRides, getRideRow, deleteRide, updateRideTitle,
 } from './store/db.js';
 
 /** 会话鉴权：Authorization: Bearer <token> → userId；失败返回 null（调用方回 401） */
@@ -140,7 +140,17 @@ app.get('/tiles/*', async (req, reply) => {
   }
 });
 
-/** 触发同步（凭据用当前用户绑定的 iGPSPORT 账号） */
+/* ---------- 后台任务（同步等长耗时操作不阻塞页面） ---------- */
+interface Job {
+  userId: string;
+  status: 'running' | 'done' | 'error';
+  result?: unknown;
+  error?: string;
+  startedAt: number;
+}
+const jobs = new Map<string, Job>();
+
+/** 触发同步：立即返回 jobId，后台执行；前端轮询 GET /api/jobs/:id */
 app.post('/api/sync', async (req, reply) => {
   const uid = authUser(req);
   if (!uid) return reply.code(401).send({ error: '未登录' });
@@ -148,13 +158,44 @@ app.post('/api/sync', async (req, reply) => {
   if (!user?.igp_u || !user?.igp_p) {
     return reply.code(400).send({ error: '未绑定 iGPSPORT 账号，请先在设置页绑定' });
   }
-  try {
-    const { runSync } = await import('./sync/sync.js');
-    const summary = await runSync({ username: user.igp_u, password: user.igp_p, userId: uid });
-    return { ok: true, ...summary };
-  } catch (e) {
-    return reply.code(502).send({ error: String((e as Error).message ?? e) });
+  // 同一用户同时只允许一个同步任务
+  for (const j of jobs.values()) {
+    if (j.userId === uid && j.status === 'running') {
+      return reply.code(409).send({ error: '已有同步任务在进行中' });
+    }
   }
+  const jobId = newUserId();
+  jobs.set(jobId, { userId: uid, status: 'running', startedAt: Date.now() });
+  const { runSync } = await import('./sync/sync.js');
+  runSync({ username: user.igp_u, password: user.igp_p, userId: uid })
+    .then((summary) => {
+      const j = jobs.get(jobId);
+      if (j) {
+        j.status = 'done';
+        j.result = summary;
+      }
+    })
+    .catch((e) => {
+      const j = jobs.get(jobId);
+      if (j) {
+        j.status = 'error';
+        j.error = String((e as Error).message ?? e);
+      }
+    });
+  return { ok: true, jobId };
+});
+
+/** 查询后台任务状态 */
+app.get('/api/jobs/:id', async (req, reply) => {
+  const uid = authUser(req);
+  if (!uid) return reply.code(401).send({ error: '未登录' });
+  const job = jobs.get((req.params as { id: string }).id);
+  if (!job || job.userId !== uid) return reply.code(404).send({ error: '任务不存在' });
+  // 清理 30 分钟前的旧任务
+  for (const [id, j] of jobs) {
+    if (j.status !== 'running' && Date.now() - j.startedAt > 30 * 60e3) jobs.delete(id);
+  }
+  return { status: job.status, result: job.result, error: job.error };
 });
 
 /** iGPSPORT 账号绑定状态（绑定在当前用户名下，密码永不回传） */
@@ -201,6 +242,32 @@ app.post('/api/activities/fit', async (req, reply) => {
   } catch (e) {
     return reply.code(400).send({ error: String((e as Error).message ?? e) });
   }
+});
+
+/** 骑行改名（仅本人骑行；公开演示数据不可改名） */
+app.patch('/api/rides/:rideId', async (req, reply) => {
+  const uid = authUser(req);
+  if (!uid) return reply.code(401).send({ error: '未登录' });
+  const rideId = Number((req.params as { rideId: string }).rideId);
+  const row = getRideRow(rideId, uid);
+  if (!row) return reply.code(404).send({ error: '骑行不存在' });
+  if (row.ownerId === null) return reply.code(403).send({ error: '公开演示数据不支持改名' });
+  const { title } = (req.body ?? {}) as { title?: string };
+  const clean = title?.trim().slice(0, 60);
+  if (!clean) return reply.code(400).send({ error: '名称不能为空' });
+  updateRideTitle(rideId, clean);
+  return { ok: true, title: clean };
+});
+
+/** 删除骑行（本人骑行；公开演示数据任何登录用户可删除） */
+app.delete('/api/rides/:rideId', async (req, reply) => {
+  const uid = authUser(req);
+  if (!uid) return reply.code(401).send({ error: '未登录' });
+  const rideId = Number((req.params as { rideId: string }).rideId);
+  const row = getRideRow(rideId, uid);
+  if (!row) return reply.code(404).send({ error: '骑行不存在' });
+  deleteRide(rideId);
+  return { ok: true };
 });
 
 /* ---------- 认证：注册 / 登录 / 登出 / 当前用户 ---------- */

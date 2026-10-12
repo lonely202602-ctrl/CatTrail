@@ -150,6 +150,7 @@ function toInfo(r: RideRecord): RideInfo {
     maxSpeedKmh: r.maxSpeedKmh,
     province: r.province,
     city: r.city,
+    demo: r.demo,
   };
 }
 

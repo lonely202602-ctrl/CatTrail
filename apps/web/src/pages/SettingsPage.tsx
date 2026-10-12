@@ -1,8 +1,8 @@
 /** 设置页：iGPSPORT 账号绑定/换绑/解绑 + 手动同步触发 + 退出登录 */
 import { useEffect, useState } from 'react';
 import {
-  clearIgpsportSettings, clearToken, fetchIgpsportSettings, saveIgpsportSettings, triggerSync,
-  type IgpsportSettings, type SyncResult,
+  clearIgpsportSettings, clearToken, fetchIgpsportSettings, getJob, saveIgpsportSettings, startSync,
+  type IgpsportSettings,
 } from '../data/adapter';
 import { PageDecor } from './AuthPage';
 
@@ -20,8 +20,31 @@ export function SettingsPage({
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const [syncing, setSyncing] = useState(false);
+  /** 进行中的同步任务（后台执行，可离开本页） */
+  const [syncJob, setSyncJob] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // 轮询后台同步任务状态，完成/失败自动收尾并刷新数据
+  useEffect(() => {
+    if (!syncJob) return;
+    const iv = setInterval(async () => {
+      try {
+        const j = await getJob(syncJob);
+        if (j.status === 'done') {
+          clearInterval(iv);
+          setSyncJob(null);
+          const r = j.result!;
+          setSyncMsg({ ok: true, text: `同步完成：拉取 ${r.fetched} 条，新增 ${r.added}，跳过 ${r.skipped}，总里程 ${r.totalKm} km` });
+          onDataChanged();
+        } else if (j.status === 'error') {
+          clearInterval(iv);
+          setSyncJob(null);
+          setSyncMsg({ ok: false, text: `同步失败：${j.error ?? '未知错误'}` });
+        }
+      } catch { /* 轮询失败下次再试 */ }
+    }, 2000);
+    return () => clearInterval(iv);
+  }, [syncJob, onDataChanged]);
 
   const load = () => {
     fetchIgpsportSettings().then(setStatus).catch((e) => setLoadErr(String((e as Error).message)));
@@ -59,16 +82,12 @@ export function SettingsPage({
   };
 
   const sync = async () => {
-    setSyncing(true);
     setSyncMsg(null);
     try {
-      const r: SyncResult = await triggerSync();
-      setSyncMsg({ ok: true, text: `同步完成：拉取 ${r.fetched} 条，新增 ${r.added}，跳过 ${r.skipped}，总里程 ${r.totalKm} km` });
-      onDataChanged();
+      const { jobId } = await startSync();
+      setSyncJob(jobId); // 后台执行，轮询收尾；期间可自由离开本页
     } catch (e) {
       setSyncMsg({ ok: false, text: String((e as Error).message) });
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -142,8 +161,8 @@ export function SettingsPage({
         </p>
         {syncMsg && <div className={`settings__msg ${syncMsg.ok ? 'ok' : 'err'}`}>{syncMsg.text}</div>}
         <div className="settings__row">
-          <button className="btn-primary" disabled={!bound || syncing} onClick={sync}>
-            {syncing ? '同步中…（条目多时需要几分钟）' : '⟳ 立即同步'}
+          <button className="btn-primary" disabled={!bound || !!syncJob} onClick={sync}>
+            {syncJob ? '⟳ 同步中…后台执行，可离开本页' : '⟳ 立即同步'}
           </button>
         </div>
       </section>
