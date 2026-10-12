@@ -49,7 +49,7 @@ export function AuthPage({ theme, onAuthed }: { theme: 'night' | 'day'; onAuthed
     <div className={`authpage authpage-${theme}`}>
       <PageDecor />
       <div className="authcard">
-        <img className="authcard__logo" src="/brand/logo-icon.png?v=2" alt="" />
+        <img className="authcard__logo" src="/brand/logo-icon.png?v=3" alt="" />
         <h1 className="authcard__brand">
           猫踪<span>CAT TRAIL</span>
         </h1>

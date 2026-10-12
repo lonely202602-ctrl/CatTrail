@@ -48,7 +48,7 @@ export default function SidePanel({
   return (
     <aside className="panel">
       <div className="panel__brand">
-        <img className="brand-logo" src="/brand/logo-icon.png?v=2" alt="CatTrail" />
+        <img className="brand-logo" src="/brand/logo-icon.png?v=3" alt="CatTrail" />
         <div>
           <h1>
             猫踪<span className="en">CAT TRAIL</span>

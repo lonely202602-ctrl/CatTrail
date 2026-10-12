@@ -56,7 +56,7 @@ async function loadLogo(): Promise<HTMLImageElement | null> {
     const img = new Image();
     img.onload = () => { logoCache = img; resolve(img); };
     img.onerror = () => resolve(null);
-    img.src = '/brand/logo-icon.png?v=2';
+    img.src = '/brand/logo-icon.png?v=3';
   });
 }
 
