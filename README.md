@@ -137,6 +137,7 @@ VITE_DATA_MODE=static npm run build:web     # 读取 data/ 演示快照构建纯
 - [MapLibre GL JS](https://maplibre.org) — 开源地图渲染
 - [fit-file-parser](https://www.npmjs.com/package/fit-file-parser) — FIT 解析
 - [running_page](https://github.com/yihong0618/running_page) — 同类项目的先行者与思路参考
+- 本开源项目已链接并认可 [LINUX DO](https://linux.do) 社区 — 真诚、友善、团结、专业，共建你我引以为荣之社区
 
 ---
 
