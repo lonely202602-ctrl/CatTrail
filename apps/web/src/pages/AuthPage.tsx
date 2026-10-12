@@ -92,11 +92,6 @@ export function AuthPage({ theme, onAuthed }: { theme: 'night' | 'day'; onAuthed
           {busy ? '请稍候…' : mode === 'login' ? '登录' : '注册并进入'}
         </button>
 
-        <p className="authcard__note">
-          {mode === 'register'
-            ? '首个注册的账号会认领服务器里已有的历史骑行数据'
-            : '数据按账号隔离，只有你能看到自己的骑行'}
-        </p>
       </div>
     </div>
   );
