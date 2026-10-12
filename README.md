@@ -114,6 +114,7 @@ VITE_DATA_MODE=static npm run build:web     # 读取 data/ 快照构建纯静态
 ## 🙏 致谢
 
 - [OpenFreeMap](https://openfreemap.org) — 免费无 key 的矢量瓦片
+- 地图数据 © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)（ODbL 开放许可）
 - [MapLibre GL JS](https://maplibre.org) — 开源地图渲染
 - [fit-file-parser](https://www.npmjs.com/package/fit-file-parser) — FIT 解析
 - [running_page](https://github.com/yihong0618/running_page) — 同类项目的先行者与思路参考

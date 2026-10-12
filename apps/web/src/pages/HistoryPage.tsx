@@ -138,7 +138,7 @@ function TrackMiniMap({ track, theme }: { track: [number, number][]; theme: 'nig
       container: ref.current,
       style: buildStyle(theme),
       interactive: false,
-      attributionControl: false,
+      attributionControl: { compact: true },
       renderWorldCopies: false,
       fadeDuration: 0,
     });

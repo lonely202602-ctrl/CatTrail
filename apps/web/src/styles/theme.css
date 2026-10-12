@@ -923,182 +923,6 @@ body {
 
 /* 主题切换面纱同时淡出页面壳 */
 .theme-fading .page { opacity: 0.08; pointer-events: none; }
-
-/* ============================================
-   登录/注册页 + 氛围背景装饰
-   ============================================ */
-.pagedecor {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-  z-index: 0;
-}
-.pagedecor__blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(70px);
-  opacity: 0.5;
-}
-.pagedecor__blob.b1 {
-  width: 480px;
-  height: 480px;
-  left: -140px;
-  top: -120px;
-  background: radial-gradient(circle, rgba(255, 107, 53, 0.2), transparent 70%);
-}
-.pagedecor__blob.b2 {
-  width: 520px;
-  height: 520px;
-  right: -160px;
-  top: 30%;
-  background: radial-gradient(circle, rgba(255, 179, 71, 0.14), transparent 70%);
-}
-.pagedecor__blob.b3 {
-  width: 420px;
-  height: 420px;
-  left: 30%;
-  bottom: -180px;
-  background: radial-gradient(circle, rgba(255, 107, 53, 0.1), transparent 70%);
-}
-.pagedecor__paw {
-  position: absolute;
-  right: -60px;
-  bottom: -80px;
-  color: rgba(255, 107, 53, 0.05);
-  transform: rotate(-24deg);
-}
-:root[data-theme='day'] .pagedecor__blob.b1 { opacity: 0.55; }
-:root[data-theme='day'] .pagedecor__paw { color: rgba(232, 85, 31, 0.05); }
-
-.authpage {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: var(--bg-0);
-  z-index: 100;
-}
-.authcard {
-  position: relative;
-  z-index: 1;
-  width: min(380px, calc(100vw - 40px));
-  padding: 30px 30px 24px;
-  border-radius: 22px;
-  background: var(--bg-1);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  border: 1px solid var(--line);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4);
-  text-align: center;
-}
-.authcard__logo {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  box-shadow: 0 8px 24px var(--track-glow);
-}
-.authcard__brand {
-  margin: 12px 0 0;
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: 1px;
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 8px;
-}
-.authcard__brand span {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 3px;
-  color: var(--ink-3);
-}
-.authcard__slogan { margin: 6px 0 18px; font-size: 12px; color: var(--ink-2); }
-.authcard__tabs {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 12px;
-  background: var(--bg-2);
-  margin-bottom: 16px;
-}
-.authcard__tabs button {
-  flex: 1;
-  padding: 8px 0;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  color: var(--ink-2);
-  font-family: var(--font);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
-}
-.authcard__tabs button.active {
-  background: var(--bg-0);
-  color: var(--cat-orange);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-}
-.authcard__err {
-  margin-bottom: 12px;
-  padding: 9px 12px;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 99, 99, 0.12);
-  color: #ff8a8a;
-  font-size: 12.5px;
-}
-:root[data-theme='day'] .authcard__err { color: #b3423e; }
-.authcard__submit {
-  width: 100%;
-  padding: 12px 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, var(--cat-orange), color-mix(in srgb, var(--cat-orange) 70%, var(--cat-amber)));
-  color: #fff;
-  font-family: var(--font);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
-}
-.authcard__submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 24px var(--track-glow); }
-.authcard__submit:disabled { opacity: 0.45; cursor: not-allowed; }
-.authcard__note { margin: 14px 0 0; font-size: 11px; color: var(--ink-3); }
-
-/* 导航栏：logo + 滑动激活指示器 */
-.navbar__logo {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  margin: 0 2px 0 8px;
-  box-shadow: 0 3px 10px var(--track-glow);
-}
-.navbar__sep {
-  width: 1px;
-  height: 22px;
-  background: var(--line);
-  margin: 0 6px;
-}
-.navbar__tabs { position: relative; display: flex; gap: 4px; }
-.navbar__thumb {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  border-radius: 999px;
-  background: linear-gradient(135deg, var(--cat-orange), color-mix(in srgb, var(--cat-orange) 70%, var(--cat-amber)));
-  box-shadow: 0 4px 16px var(--track-glow);
-  transition: transform 0.34s cubic-bezier(0.3, 0.9, 0.3, 1.05), width 0.34s cubic-bezier(0.3, 0.9, 0.3, 1.05);
-}
-.navbar__item { position: relative; z-index: 1; }
-.navbar__item.active {
-  background: transparent;
-  box-shadow: none;
-}
-
 /* 热力图头部统计 chips */
 .heatmap__head { flex-wrap: wrap; }
 .heatmap__chip {
@@ -1182,3 +1006,263 @@ body {
   border-radius: 22%;
   padding: 2px;
 }
+
+/* ============================================
+   登录/注册页：品牌化左右分栏
+   ============================================ */
+.authpage {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg-0);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.authsplit {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1.06fr 0.94fr;
+  width: min(980px, 94vw);
+  min-height: 580px;
+  border-radius: 26px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  box-shadow: 0 40px 110px rgba(0, 0, 0, 0.45);
+  animation: authsplit-in 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.05);
+}
+@keyframes authsplit-in {
+  from { opacity: 0; transform: translateY(22px) scale(0.97); }
+}
+
+/* 品牌展示区 */
+.authshow {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 48px 44px 40px;
+  color: var(--ink-1);
+  background:
+    radial-gradient(420px 300px at 18% 8%, var(--track-glow), transparent 70%),
+    linear-gradient(160deg, var(--authshow-a, #182236), var(--authshow-b, #0a0e17) 68%);
+  overflow: hidden;
+}
+:root[data-theme='day'] .authshow {
+  --authshow-a: #fffdf6;
+  --authshow-b: #f1e9d8;
+  box-shadow: inset -1px 0 0 var(--line);
+}
+.authshow::before {
+  /* 等高线装饰圈 */
+  content: '';
+  position: absolute;
+  right: -90px;
+  top: -110px;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  box-shadow: 0 0 0 34px color-mix(in srgb, var(--line) 45%, transparent), 0 0 0 74px color-mix(in srgb, var(--line) 22%, transparent);
+  opacity: 0.7;
+}
+.authshow__logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  box-shadow: 0 12px 32px var(--track-glow);
+  animation: authlogo-float 4.2s ease-in-out infinite;
+}
+@keyframes authlogo-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+.authshow__brand {
+  margin: 16px 0 0;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.authshow__brand span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: var(--ink-3);
+}
+.authshow__slogan {
+  margin: 10px 0 6px;
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+.authshow__route {
+  width: min(360px, 92%);
+  margin: 8px 0 4px;
+  color: var(--cat-orange);
+  opacity: 0.9;
+}
+.authshow__path { animation: route-dash 7s linear infinite; }
+@keyframes route-dash {
+  to { stroke-dashoffset: -160; }
+}
+.authshow__feats {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.authshow__feats li { display: flex; align-items: center; gap: 8px; }
+
+/* 表单区 */
+.authform {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  padding: 44px 40px;
+  background: var(--bg-1);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+}
+.authform__tabs {
+  position: relative;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--bg-2);
+  margin-bottom: 6px;
+}
+.authform__thumb {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 6px);
+  border-radius: 9px;
+  background: var(--bg-0);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+  transition: transform 0.28s cubic-bezier(0.3, 0.9, 0.3, 1.1);
+}
+.authform__thumb.right { transform: translateX(calc(100% + 4px)); }
+.authform__tabs button {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  padding: 9px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 0.22s ease;
+}
+.authform__tabs button.active { color: var(--cat-orange); }
+
+.infield { position: relative; display: block; }
+.infield svg {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-3);
+  pointer-events: none;
+  transition: color 0.18s ease;
+}
+.infield input {
+  width: 100%;
+  padding: 12px 42px 12px 38px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--ink-1);
+  font-family: var(--font);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.infield input:focus {
+  border-color: var(--cat-orange);
+  box-shadow: 0 0 0 3px var(--track-glow);
+}
+.infield input:focus ~ svg, .infield:focus-within svg { color: var(--cat-orange); }
+.infield input::placeholder { color: var(--ink-3); }
+.infield__eye {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: color 0.18s ease;
+}
+.infield__eye:hover { color: var(--ink-1); }
+
+.authform__err {
+  margin: -2px 0 0;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 99, 99, 0.12);
+  color: #ff8a8a;
+  font-size: 12.5px;
+  animation: autherr-shake 0.3s ease;
+}
+@keyframes autherr-shake {
+  25% { transform: translateX(-4px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+}
+:root[data-theme='day'] .authform__err { color: #b3423e; }
+
+.authform__submit {
+  padding: 13px 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--cat-orange), color-mix(in srgb, var(--cat-orange) 68%, var(--cat-amber)));
+  color: #fff;
+  font-family: var(--font);
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+}
+.authform__submit:hover:not(:disabled) { transform: translateY(-1.5px); box-shadow: 0 10px 28px var(--track-glow); }
+.authform__submit:active:not(:disabled) { transform: translateY(0); }
+.authform__submit:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.authform__note { margin: 2px 0 0; font-size: 11px; color: var(--ink-3); text-align: center; }
+
+/* 窄屏：只保留表单卡 */
+@media (max-width: 880px) {
+  .authsplit {
+    grid-template-columns: 1fr;
+    width: min(420px, 94vw);
+    min-height: 0;
+  }
+  .authshow { display: none; }
+  .authform { padding: 34px 30px 28px; }
+}
+
+/* 认证页：爪印水印退场（避免与登录卡争夺视觉焦点） */
+.authpage .pagedecor__paw { display: none; }
+.authpage .pagedecor__blob.b2 { right: -120px; top: auto; bottom: -140px; }

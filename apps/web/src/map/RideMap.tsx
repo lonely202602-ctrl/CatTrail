@@ -57,7 +57,7 @@ export default function RideMap({
       style: buildStyle(handlers.current.theme),
       center: [113.38, 23.07],
       zoom: 11,
-      attributionControl: false,
+      attributionControl: { compact: true },
       renderWorldCopies: false,
     });
     map.doubleClickZoom.disable(); // 双击留给「轨迹分析」

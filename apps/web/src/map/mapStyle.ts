@@ -64,7 +64,13 @@ export function buildStyle(theme: TrailTheme): StyleSpecification {
     version: 8,
     glyphs: `${TILES}/fonts/{fontstack}/{range}.pbf`,
     sources: {
-      openmaptiles: { url: `${TILES}/planet`, type: 'vector' },
+      openmaptiles: {
+        url: `${TILES}/planet`,
+        type: 'vector',
+        attribution:
+          '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' +
+          ' · <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>',
+      },
     },
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': P.bg } },
