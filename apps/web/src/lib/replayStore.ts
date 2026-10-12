@@ -27,7 +27,7 @@ export const replayStore = {
     state = { rideId, progress: 0 };
     emit();
   },
-  /** 地图 RAF 每帧调用；React 通知节流到 ~11Hz（结束时立即通知一次） */
+  /** 地图定时器每帧调用；React 通知节流到 ~11Hz（结束时立即通知一次） */
   update(rideId: number, progress: number) {
     state = { rideId, progress };
     const now = performance.now();

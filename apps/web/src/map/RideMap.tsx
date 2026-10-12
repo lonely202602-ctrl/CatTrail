@@ -27,6 +27,8 @@ interface Props {
 }
 
 let opacityAnimSeq = 0;
+/** 回放动画时长（整段压缩播放） */
+const REPLAY_DURATION = 20000;
 
 export default function RideMap({
   tracks, clusters, theme, selectedId, selectedClusterId, focusRideIds, replayRideId, onReplayEnd, focusRideId, focusIsReplay, onSelect, onSelectCluster, onOpenDetail,
@@ -37,9 +39,10 @@ export default function RideMap({
   const tracksRef = useRef<TrackFC | null>(null);
   const clustersRef = useRef<RouteCluster[]>(clusters);
   const selectedClusterRef = useRef<string | null>(selectedClusterId);
-  const replayProgressRef = useRef(0);
-  const handlers = useRef({ onSelect, onSelectCluster, onOpenDetail, theme });
-  handlers.current = { onSelect, onSelectCluster, onOpenDetail, theme };
+  /** 底图实际渲染中的主题（可能与 UI 主题短暂脱节，就绪后补齐） */
+  const appliedMapTheme = useRef<TrailTheme | null>(null);
+  const handlers = useRef({ onSelect, onSelectCluster, onOpenDetail, onReplayEnd, theme });
+  handlers.current = { onSelect, onSelectCluster, onOpenDetail, onReplayEnd, theme };
   const markerRef = useRef<maplibregl.Marker | null>(null);
   tracksRef.current = tracks;
   clustersRef.current = clusters;
@@ -58,6 +61,7 @@ export default function RideMap({
     });
     map.doubleClickZoom.disable(); // 双击留给「轨迹分析」
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+    appliedMapTheme.current = handlers.current.theme;
     (window as unknown as { __map?: maplibregl.Map }).__map = map;
     (window as unknown as { __mapErrors: string[] }).__mapErrors = [];
     map.on('error', (e) => {
@@ -85,16 +89,25 @@ export default function RideMap({
   }, [tracks]);
 
   // 主题切换 → 底图淡出 → 重建样式并重挂轨迹 → 淡入（换肤时路线重新“骑”一遍）
+  // 地图未就绪（首屏瓦片加载中）不跳过：就绪后补换肤，避免 UI 主题与底图脱节
   useEffect(() => {
     const map = mapRef.current;
     const el = containerRef.current;
-    if (!map || !el || !map.loaded()) return;
-    el.classList.add('map-fading');
-    map.setStyle(buildStyle(theme), { diff: false });
-    map.once('style.load', () => {
-      if (tracksRef.current) mountTracks(map, tracksRef.current);
-      setTimeout(() => el.classList.remove('map-fading'), 300);
-    });
+    if (!map || !el) return;
+    const rebuild = () => {
+      const current = handlers.current.theme;
+      if (appliedMapTheme.current === current || !mapRef.current) return;
+      appliedMapTheme.current = current;
+      el.classList.add('map-fading');
+      map.setStyle(buildStyle(current), { diff: false });
+      map.once('style.load', () => {
+        if (tracksRef.current) mountTracks(map, tracksRef.current);
+        setTimeout(() => el.classList.remove('map-fading'), 300);
+      });
+    };
+    if (appliedMapTheme.current === theme) return;
+    if (map.loaded()) rebuild();
+    else waitStyleReady(map, rebuild);
   }, [theme]);
 
 
@@ -132,55 +145,100 @@ export default function RideMap({
   }, [selectedClusterId, clusters, tracks]);
 
 
-  // 骑行回放：光点沿轨迹移动 + 已骑路径渐进点亮
-  // 渐变创建时静态设置（涂色），每帧只更新部分线几何——终点恒等于光点位置
+  // 骑行回放：光点沿轨迹移动 + 已骑路径渐进点亮。
+  // 单一 setInterval + 真实时间戳算进度：页面被遮挡限流时只是跳帧，进度按墙钟走、收尾必然发生
+  //（RAF 帧链在页面不可见时会被整条掐断，那是回放卡死的根源）。
+  // 样式重建窗口内初始化失败不弃权：清掉半成品，下一个 tick 自动重试。
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !tracks) return;
-    let raf = 0;
-    let stopped = false;
 
-    const hideReplay = () => {
+    const clearVisuals = () => {
       markerRef.current?.remove();
       markerRef.current = null;
-      if (map.getSource('replay-line')) {
-        (map.getSource('replay-line') as maplibregl.GeoJSONSource)?.setData({
-          type: 'FeatureCollection',
-          features: [],
-        });
+      const src = map?.getSource('replay-line') as maplibregl.GeoJSONSource | undefined;
+      if (map && src && map.getLayer('replay-line')) {
+        src.setData({ type: 'FeatureCollection', features: [] });
       }
     };
 
-    const begin = () => {
-      if (stopped) return;
-      if (replayRideId == null) {
-        // 自然播完（进度≥0.99）：保留完整亮线与终点光点；中途停止：隐藏
-        if (replayProgressRef.current < 0.99) hideReplay();
-        return;
+    // 停止/收尾：立即清场回默认态，不依赖样式就绪（换肤重建窗口也要马上响应）
+    if (!map || !tracks || replayRideId == null) {
+      clearVisuals();
+      replayStore.stop();
+      return;
+    }
+
+    const f = tracks.features.find((x) => x.properties.rideId === replayRideId);
+    if (!f || f.geometry.coordinates.length < 2) return;
+    const coords = f.geometry.coordinates;
+    const start = performance.now();
+    let iv: ReturnType<typeof setInterval> | undefined;
+    let ready = false;
+    let initTries = 0;
+    let done = false;
+
+    const finish = (fullFrame: boolean) => {
+      if (done) return;
+      done = true;
+      clearInterval(iv);
+      try {
+        if (fullFrame) {
+          (map.getSource('replay-line') as maplibregl.GeoJSONSource | undefined)?.setData({
+            type: 'FeatureCollection',
+            features: [
+              { type: 'Feature', properties: f.properties, geometry: { type: 'LineString', coordinates: coords } },
+            ],
+          });
+        } else {
+          clearVisuals();
+        }
+      } catch { /* 样式重建窗口：视觉交给原轨迹层 */ }
+      replayStore.stop();
+      handlers.current.onReplayEnd();
+    };
+
+    iv = setInterval(() => {
+      if (done) return;
+      const p = Math.min(1, (performance.now() - start) / REPLAY_DURATION);
+
+      if (!ready) {
+        // 初始化（加源/加层/渐变/光点）：样式重建窗口内会抛错——清半成品，下一 tick 重试
+        try {
+          const src = ensureReplayLayers(map, handlers.current.theme);
+          if (!src) return;
+          if (!markerRef.current) {
+            const el = document.createElement('div');
+            el.className = 'replay-dot';
+            markerRef.current = new maplibregl.Marker({ element: el })
+              .setLngLat(coords[0])
+              .addTo(map);
+          }
+          const C = trailPalette(handlers.current.theme);
+          // 静态渐变：主体主题色，头部 10% 微光提亮
+          map.setPaintProperty('replay-line', 'line-gradient',
+            ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.9, C.track, 1, C.hi]);
+          map.setPaintProperty('replay-glow', 'line-gradient',
+            ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.85, C.track, 1, C.hi]);
+          replayStore.start(replayRideId);
+          ready = true;
+        } catch (err) {
+          markerRef.current?.remove();
+          markerRef.current = null;
+          if (initTries === 1 || initTries % 40 === 0) {
+            console.warn('[CatTrail] 回放初始化重试', err);
+          }
+          if (++initTries > 200) {
+            console.warn('[CatTrail] 回放初始化反复失败，已复位');
+            finish(false);
+          }
+          return;
+        }
       }
-      const f = tracks.features.find((x) => x.properties.rideId === replayRideId);
-      if (!f || f.geometry.coordinates.length < 2) return;
-      const coords = f.geometry.coordinates;
-      const src = ensureReplayLayers(map, handlers.current.theme);
-      if (!src) return;
 
-      const C = trailPalette(handlers.current.theme);
-      // 静态渐变：主体主题色，头部 10% 微光提亮
-      map.setPaintProperty('replay-line', 'line-gradient',
-        ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.9, C.track, 1, C.hi]);
-      map.setPaintProperty('replay-glow', 'line-gradient',
-        ['interpolate', ['linear'], ['line-progress'], 0, C.track, 0.85, C.track, 1, C.hi]);
-
-      replayStore.start(replayRideId);
-      const DUR = 20000;
-      const start = performance.now();
-      const tick = (now: number) => {
-        if (stopped || !markerRef.current || !map.getSource('replay-line')) return;
-        const p = Math.min(1, (now - start) / DUR);
-        replayProgressRef.current = p;
+      try {
         const idx = Math.min(coords.length - 1, Math.floor(p * (coords.length - 1)));
-        markerRef.current.setLngLat(coords[idx]);
-        src.setData({
+        markerRef.current?.setLngLat(coords[idx]);
+        (map.getSource('replay-line') as maplibregl.GeoJSONSource).setData({
           type: 'FeatureCollection',
           features: [
             {
@@ -191,31 +249,26 @@ export default function RideMap({
           ],
         });
         replayStore.update(replayRideId, p);
-        if (p < 1) {
-          raf = requestAnimationFrame(tick);
-        } else {
-          // 播完：整条亮线保持（恢复原貌），1.2s 后通知 App 收尾
-          src.setData({
+        if (p >= 1) {
+          // 播完：亮一帧完整轨迹，随即收尾清场回默认态（原轨迹层接管）
+          (map.getSource('replay-line') as maplibregl.GeoJSONSource).setData({
             type: 'FeatureCollection',
             features: [
-              { type: 'Feature', properties: f?.properties ?? {}, geometry: { type: 'LineString', coordinates: coords } },
+              { type: 'Feature', properties: f.properties, geometry: { type: 'LineString', coordinates: coords } },
             ],
           });
-          setTimeout(() => {
-            replayStore.stop();
-            handlers.current.onReplayEnd();
-          }, 1200);
+          finish(true);
         }
-      };
-      raf = requestAnimationFrame(tick);
-    };
-
-    // 样式未就绪时（慢网络）轮询等待，避免 "Style is not done loading" 异常
-    waitStyleReady(map, begin);
+      } catch (err) {
+        // 中途样式重建等异常：本场作废复位，可重新发起
+        console.warn('[CatTrail] 回放异常终止，已复位', err);
+        finish(false);
+      }
+    }, 16);
 
     return () => {
-      stopped = true;
-      cancelAnimationFrame(raf);
+      done = true;
+      clearInterval(iv);
     };
   }, [replayRideId, tracks]);
 
