@@ -29,7 +29,7 @@ export function NavBar({ page, onChange }: { page: PageKey; onChange: (p: PageKe
 
   return (
     <nav className="navbar" aria-label="主导航">
-      <img className="navbar__logo" src="/brand/logo-icon.png" alt="猫踪 CatTrail" />
+      <img className="navbar__logo" src="/brand/logo-icon.png?v=2" alt="猫踪 CatTrail" />
       <i className="navbar__sep" aria-hidden />
       <div className="navbar__tabs">
         <span
