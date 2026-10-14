@@ -11,7 +11,7 @@
   "dependencies": {
     "@lonelycat/shared": "*",
     "fastify": "^5.0.0",
-    "fit-file-parser": "^6.2.1"
+    "fit-file-parser": "6.2.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

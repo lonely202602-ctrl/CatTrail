@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { RideSeriesPoint, RideRecord, RidesIndex, RideInfo } from '@lonelycat/shared';
 import { getEdgeKeys, login, listAllActivities, getActivityDetail, downloadFit, sleep } from '../igpsport/client.js';
-import { parseFit, type TrackPoint, type FitMeta } from '../igpsport/fit.js';
+import { parseFit, looksLikeFit, type TrackPoint, type FitMeta } from '../igpsport/fit.js';
 import { openDb, upsertRide, getStoredSeriesVersions, listRides } from '../store/db.js';
 import { buildClusters } from '../clusters/cluster.js';
 import { resolveRegion } from '../geo/region.js';
@@ -209,8 +209,8 @@ export interface IngestSummary {
 /** FIT 手动上传入库：解析 → 建记录（rideId 取起点时间，重传即覆盖）→ 快照刷新 */
 export async function ingestFitRide(buf: Buffer, userId: string): Promise<IngestSummary> {
   openDb();
-  // 非法文件提前拦截：FIT 文件头 bytes 4-7 固定 ".FIT"
-  if (buf.length < 12 || buf.toString('latin1', 4, 8) !== '.FIT') {
+  // 非法文件提前拦截：头长度字节 0x0C/0x0E + ".FIT" 魔数（bytes 8-11 正常 / 4-7 变体都认）
+  if (!looksLikeFit(buf)) {
     throw new Error('这不是有效的 FIT 文件，请从码表 App 导出 .fit 后再拖入');
   }
   let points: TrackPoint[];

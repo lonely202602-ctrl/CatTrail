@@ -3,6 +3,7 @@
  * 端点均为网页版同款；调用频率由 sync 层控制在 ~1 req/s。
  */
 import { sign } from './signer.js';
+import { looksLikeFit } from './fit.js';
 
 const API_BASE = 'https://prod.zh.igpsport.com';
 const UA =
@@ -135,8 +136,8 @@ export async function downloadFit(fitUrl: string): Promise<Buffer> {
   const res = await fetch(fitUrl);
   if (!res.ok) throw new Error(`FIT 下载失败 HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
-  // 标准头：bytes 4-7 固定 ".FIT"；链接失效/被拦时 OSS 常返回 200 + XML/HTML 错误页
-  if (buf.length >= 12 && buf.toString('latin1', 4, 8) === '.FIT') return buf;
+  // 头长度字节 0x0C/0x0E + ".FIT" 魔数（正常在 bytes 8-11；兼容个别写入方放在 4-7 的变体）
+  if (looksLikeFit(buf)) return buf;
 
   // 非标准头：部分设备/链路会在 FIT 头前带垃圾前缀——在前 64 字节里搜 ".FIT"，
   // 其前 4 字节应为头长度字节（0x0C/0x0E），命中则从真正的文件头开始截取
